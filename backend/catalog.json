@@ -1,0 +1,37 @@
+{
+  "SKU_BOAT_100": {
+    "name": "boAt Bassheads 100 Wired Earphones",
+    "category": "Audio",
+    "description": "Super extra bass wired in-ear earphones with in-line microphone and tangle-free PVC cable.",
+    "unit_price_paise": 39900,
+    "integrity_hash": "063e3a6cab598d59d2d39fc49f3c9637091f93c3bd3021506c59f1b57ad6b563"
+  },
+  "SKU_BOAT_242": {
+    "name": "boAt Rockerz 242 Bluetooth Sports Earphones",
+    "category": "Audio",
+    "description": "Sweat and water resistant wireless neckband earphones with 10mm dynamic drivers for gym workouts and running.",
+    "unit_price_paise": 99900,
+    "integrity_hash": "138f13bf262f4d23f6028cf2efcf36fceb0cc607f2bbbd4009e924577f6bb062"
+  },
+  "SKU_NOISE_PULSE": {
+    "name": "Noise ColorFit Pulse Grand Smartwatch",
+    "category": "Wearables",
+    "description": "Fitness tracking smartwatch with 1.69 inch HD display, 24x7 heart rate monitor, sleep tracking, and IP68 water resistance.",
+    "unit_price_paise": 149900,
+    "integrity_hash": "8cc77caaffb933d72ce9149f6031924c46196bdb093cc91e5e187a3d3eb3fa20"
+  },
+  "SKU_SONY_WH1000": {
+    "name": "Sony WH-1000XM5 Wireless Noise Canceling Headphones",
+    "category": "Audio",
+    "description": "Flagship over-ear wireless headphones with industry-leading dual processor active noise cancellation and 30-hour battery life.",
+    "unit_price_paise": 2999000,
+    "integrity_hash": "a56762e9c559f0c7f3476f8cb875a870c8b1310abc05230092dc7d28281a5f9f"
+  },
+  "SKU_MI_POWERBANK": {
+    "name": "Mi 3i 10000mAh Power Bank",
+    "category": "Accessories",
+    "description": "Fast charging portable power bank with dual USB output, 18W fast charging support, and 12-layer circuit protection.",
+    "unit_price_paise": 129900,
+    "integrity_hash": "c7acc558abf821d2456d665137b3490a818dbc08254a51c8f729ab9b1fe7b322"
+  }
+}

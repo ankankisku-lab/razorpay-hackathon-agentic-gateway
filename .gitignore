@@ -1,0 +1,28 @@
+# Virtual Environment (the culprit containing the 290MB torch dll)
+razorpay-hackathon/
+venv/
+.venv/
+env/
+
+# Python byte code and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest cache
+.pytest_cache/
+
+# Environment variables & secrets (API keys)
+.env
+.env.*
+!.env.example
+
+# FAISS / local vector index files (if generated locally)
+*.index
+*.faiss
+
+# Cryptographic Private Keys
+backend/keys/*.pem
+!backend/keys/*.pub.pem
+*.pem
+*.key
