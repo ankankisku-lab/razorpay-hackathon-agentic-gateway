@@ -7,6 +7,7 @@ from typing import Dict, Optional, Set, Tuple
 from pydantic import ValidationError
 
 from backend.schemas import CartMandate, IntentMandate
+from backend.signing import verify_mandate_signature
 from config import settings
 
 
@@ -54,7 +55,7 @@ class PolicyGate:
 
         return True, "", actual_price
 
-    def evaluate(self, cart_payload: dict, intent_mandate: dict) -> Tuple[bool, str, dict]:
+    def evaluate(self, cart_payload: dict, intent_mandate: dict, signature: Optional[str] = None) -> Tuple[bool, str, dict]:
         # Re-validates regardless of whether the caller already did — a
         # route, an MCP tool call, and a test all reach this differently,
         # so trusting prior validation would make this boundary only as
@@ -66,6 +67,19 @@ class PolicyGate:
             err = e.errors()[0]
             field = ".".join(str(loc) for loc in err.get("loc", []))
             return False, f"SCHEMA_REJECT: Field '{field}' - {err.get('msg')}", {}
+
+        # Verified unconditionally, not `if signature:` — a caller that
+        # simply omits the signature must be rejected, not silently let
+        # through. verify_mandate_signature already returns False (not
+        # a crash) for None or any malformed input, so no special case
+        # is needed to make "missing" behave the same as "invalid".
+        # Placed before idempotency/expiry/catalog checks deliberately:
+        # nothing about an unverified mandate's own fields — including
+        # its idempotency_key — should be trusted enough to act on
+        # until authenticity is confirmed first.
+        signed_payload = {"mandate": mandate.model_dump(), "cart": cart.model_dump()}
+        if not verify_mandate_signature(signed_payload, signature):
+            return False, "MANDATE_SIGNATURE_TAMPER_REJECT: Mandate signature verification failed — payload altered, forged, or missing.", {}
 
         idem_key = mandate.idempotency_key
 

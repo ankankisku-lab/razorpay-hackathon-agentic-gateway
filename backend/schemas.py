@@ -80,12 +80,24 @@ class ExecutionRequest(BaseModel):
     depends on being able to trace a gate decision back to what the
     user actually asked for, not just what the agent derived from it.
 
+    signature is a SIBLING field to mandate/cart, deliberately not a
+    field on IntentMandate or CartMandate themselves. sign_mandate was
+    called on {"mandate": ..., "cart": ...} before this signature
+    existed — if it lived inside either model, mandate.model_dump()/
+    cart.model_dump() would include it once set, and verification would
+    need to strip it back out before recomputing the same digest, or
+    every check would fail on a payload that no longer matches what was
+    actually signed. Keeping it structurally separate makes that
+    mistake impossible rather than something every caller has to
+    remember to guard against.
+
     No simulate_* fields here — see SimulatedExecutionRequest.
     """
     user_prompt: str
     user_id: str
     mandate: IntentMandate
     cart: CartMandate
+    signature: Optional[str] = None
     auto_execute: bool = True
 
 

@@ -57,6 +57,7 @@ class IntentLayer:
             user_id=user_id,
             mandate=mandate_result["mandate"],
             cart=mandate_result["cart"],
+            signature=mandate_result["signature"],
             auto_execute=auto_execute,
         )
 
@@ -110,7 +111,7 @@ class LLMSelectionIntentLayer:
     ) -> Dict[str, Any]:
         is_safe, label = self.guard.screen(user_prompt)
         if not is_safe:
-            raise PermissionError(f"Prompt failed security screening: flagged as '{label}'")
+            raise PromptInjectionDetectedError(f"Prompt failed security screening: flagged as '{label}'")
 
         matches = self.retriever.search(user_prompt, top_k=top_k)
         if not matches:

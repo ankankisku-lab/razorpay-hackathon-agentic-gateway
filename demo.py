@@ -23,6 +23,7 @@ from agents.intent_layer import IntentLayer
 from agents.planner import Planner
 from backend.policy_gate import PolicyGate, load_catalog
 from backend.schemas import CartItem, CartMandate, IntentMandate, SimulatedExecutionRequest
+from backend.signing import sign_mandate
 from backend.two_phase_commit import TwoPhaseCommitCoordinator
 from backend.webhook import create_webhook_router
 from backend.ledger import verify_chain, verify_signatures
@@ -167,6 +168,7 @@ def main() -> None:
     )
     decline_req = SimulatedExecutionRequest(
         user_prompt="x", user_id="usr_demo", mandate=mandate, cart=cart,
+        signature=sign_mandate({"mandate": mandate.model_dump(), "cart": cart.model_dump()}),
         simulate_gateway_decline=True,
     )
     try:
@@ -191,6 +193,7 @@ def main() -> None:
     )
     timeout_req = SimulatedExecutionRequest(
         user_prompt="x", user_id="usr_demo", mandate=mandate2, cart=cart2,
+        signature=sign_mandate({"mandate": mandate2.model_dump(), "cart": cart2.model_dump()}),
         simulate_network_timeout=True,
     )
     try:

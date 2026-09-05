@@ -156,3 +156,45 @@ def sign_mandate(mandate_dict: dict) -> str:
     canonical = json.dumps(mandate_dict, sort_keys=True, default=str)
     digest = hashlib.sha256(canonical.encode()).hexdigest()
     return sign_hash(private_key, digest)
+
+
+def verify_mandate_signature(mandate_dict: dict, signature_hex: str) -> bool:
+    """Verifies a signature produced by sign_mandate.
+
+    Recomputes the canonical digest exactly the way sign_mandate does —
+    same json.dumps(sort_keys=True, default=str), same SHA-256 step —
+    so the two can never silently drift into incompatible formats.
+    Always verifies against the CURRENT on-disk key (no historical-key
+    parameter here, unlike verify_hash_signature's ledger-facing
+    variant), since mandates are checked once at the moment of use, not
+    replayed against a historical record the way ledger entries are.
+
+    Catches malformed input broadly (not just InvalidSignature) —
+    deliberately different from verify_hash_signature's narrow catch.
+    That function verifies internally-generated ledger data, where a
+    malformed hash would mean a bug in our own trusted code, worth
+    surfacing loudly. A mandate signature arrives via an external,
+    potentially adversarial path — a garbage string here is a
+    realistic attack (or corrupted input) to reject cleanly, not a bug
+    to crash on.
+
+    Also guards explicitly against signature_hex being None or a
+    non-string before calling verify_hash_signature at all. That
+    function's dual-calling-convention dispatch decides which style was
+    used via `signature_hex is not None` — which breaks specifically
+    when the 3-argument form is intended but the signature value itself
+    is None: the public key object silently gets reassigned into the
+    digest slot instead of raising anything. Fixed here, not in
+    verify_hash_signature itself, to avoid touching that function's
+    already-proven ledger-facing dispatch logic.
+    """
+    if not isinstance(signature_hex, str):
+        return False
+
+    _, public_key = load_or_create_keypair()
+    canonical = json.dumps(mandate_dict, sort_keys=True, default=str)
+    digest = hashlib.sha256(canonical.encode()).hexdigest()
+    try:
+        return verify_hash_signature(public_key, digest, signature_hex)
+    except (ValueError, TypeError):
+        return False
