@@ -188,8 +188,8 @@ SESSION_SPEND_CAP_PAISE=1000000
 
 ### 4. Run the Gateway Dashboard
 
-Bashs
+Bash
 
-treamlit run streamlit_app.py
+streamlit run streamlit_app.py
 
 Open http://localhost:8502 to run purchases, evaluate mandates, inspect the cryptographic ledger, and test adversarial chaos injections.
