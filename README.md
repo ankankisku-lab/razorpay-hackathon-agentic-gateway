@@ -8,13 +8,21 @@ As commerce transitions from human checkout sessions to autonomous AI agents, me
 
 The Agentic Commerce Gateway enforces an authorization and settlement boundary between AI buyers and merchant rails:
 
-### 1. Bounded & Gated Actions: AI buyers cannot trigger direct charges; they can only generate intent requests that must satisfy deterministic policy bounds before cryptographic signing.
+### 1. Bounded & Gated Actions: 
 
-### 2. Zero Credential Exposure: Live payment credentials remain secured behind an orchestration gateway.
+AI buyers cannot trigger direct charges; they can only generate intent requests that must satisfy deterministic policy bounds before cryptographic signing.
 
-### 3. Atomic Settlement: Uses a Two-Phase Commit (2PC) pattern to eliminate race conditions, phantom debits, and inventory drift.
+### 2. Zero Credential Exposure:
 
-### 4. Cryptographic Tamper-Proof Auditability: Every authorization decision, reservation hold, failure abort, and payment capture is recorded into an immutable SHA-256 hash-chain ledger with Ed25519 digital signatures.
+Live payment credentials remain secured behind an orchestration gateway.
+
+### 3. Atomic Settlement:
+
+Uses a Two-Phase Commit (2PC) pattern to eliminate race conditions, phantom debits, and inventory drift.
+
+### 4. Cryptographic Tamper-Proof Auditability:
+
+Every authorization decision, reservation hold, failure abort, and payment capture is recorded into an immutable SHA-256 hash-chain ledger with Ed25519 digital signatures.
 
 
 ## System Architecture
@@ -165,12 +173,17 @@ pip install -r requirements.txt
 
 ### 3. Configuration
 
-Populate your .env file with your credentials:Code snippetGROQ_API_KEY="gsk_..."
-
+#### API Keys & Secrets
+GROQ_API_KEY="gsk_..."
 RAZORPAY_KEY_ID="rzp_test_..."
-
 RAZORPAY_KEY_SECRET="..."
 
+#### Model Architecture Configuration
+PLANNER_MODEL="openai/gpt-oss-120b"
+GUARDRAIL_MODEL="meta-llama/llama-prompt-guard-2-86m"
+EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2"
+
+#### Gateway Policy Bounds
 SESSION_SPEND_CAP_PAISE=1000000
 
 ### 4. Run the Gateway Dashboard
