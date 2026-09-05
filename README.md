@@ -20,49 +20,48 @@ The Agentic Commerce Gateway enforces an authorization and settlement boundary b
 ## System Architecture
 
 
-                                    +------------------------------------------+
-                                    |         Adversarial Threat Filter        |
-                                    |     (Llama-Prompt-Guard-2-86M on Groq)   |
-                                    +--------------------+---------------------+
-                                                         |
-                                                         v
-+------------------+       Natural Language        +-----+--------------------+
-|  Buyer AI Agent  | ----------------------------> | Intent Decomposition &   |
-+------------------+           Intent              | Parameter Extraction     |
-                                                   | (openai/gpt-oss-120b)    |
-                                                   +-----+--------------------+
-                                                         |
-                                                         v
-                                                   +-----+--------------------+
-                                                   | Dense Catalog Retrieval  |
-                                                   | (FAISS Vector Search)    |
-                                                   +-----+--------------------+
-                                                         |
-                                                         v
-                                                   +-----+--------------------+
-                                                   | Deterministic Policy Gate|
-                                                   | (Budget & Velocity Limits|
-                                                   +-----+--------------------+
-                                                         |
-                                                         v
-                                                   +-----+--------------------+
-                                                   | Ephemeral Intent Mandate |
-                                                   | (Ed25519 Asymmetric Sign)|
-                                                   +-----+--------------------+
-                                                         |
-                                                         v
-                                    +--------------------+---------------------+
-                                    |       Two-Phase Commit Coordinator       |
-                                    +--------------------+---------------------+
-                                      |                                      |
-                       Phase 1: Prepare & Verify              Phase 2: Commit & Settle
-                                      |                                      |
-                                      v                                      v
-                        +-------------+------------+          +--------------+-----------+
-                        | - Validate Ed25519 Sig   |          | - Live Razorpay API Call |
-                        | - Lock Price Parity Hold |          | - Capture Settlement     |
-                        | - Check Headroom/Session |          | - Append SHA-256 Ledger  |
-                        +--------------------------+          +--------------------------+
+                               +------------------------------------+
+                               |     Adversarial Threat Filter      |
+                               | (Llama-Prompt-Guard-2-86M on Groq) |
+                               +-----------------+------------------+
+                                                 |
+                                                 v
++------------------+   Natural Language    +-----+--------------------+
+|  Buyer AI Agent  | --------------------> | Intent Decomposition &   |
++------------------+        Intent         | Parameter Extraction     |
+                                           | (openai/gpt-oss-120b)    |
+                                           +-----+--------------------+
+                                                 |
+                                                 v
+                                           +-----+--------------------+
+                                           | Dense Catalog Retrieval  |
+                                           |  (FAISS Vector Search)   |
+                                           +-----+--------------------+
+                                                 |
+                                                 v
+                                           +-----+--------------------+
+                                           | Deterministic Policy Gate|
+                                           | (Budget & Velocity Limits|
+                                           +-----+--------------------+
+                                                 |
+                                                 v
+                                           +-----+--------------------+
+                                           | Ephemeral Intent Mandate |
+                                           | (Ed25519 Asymmetric Sign)|
+                                           +-----+--------------------+
+                                                 |
+                                                 v
+                               +-----------------+------------------+
+                               |    Two-Phase Commit Coordinator    |
+                               +--------+------------------+--------+
+                                        |                  |
+               Phase 1: Prepare & Verify|                  |Phase 2: Commit & Settle
+                                        v                  v
+                       +----------------+---------+      +-+------------------------+
+                       | - Validate Ed25519 Sig   |      | - Live Razorpay API Call |
+                       | - Lock Price Parity Hold |      | - Capture Settlement     |
+                       | - Check Headroom/Session |      | - Append SHA-256 Ledger  |
+                       +--------------------------+      +--------------------------+
 
 
 ## Core Technical Stack
@@ -101,7 +100,6 @@ b. 504 Gateway Timeout: Unique idempotency keys (idem_<hash>) are bound to each 
 ## Project Structure
 
 razorpay-hackathon-agentic-gateway/
-
 ├── agents/
 │   ├── buyer_agent.py          # Autonomous buyer agent interface
 │   ├── guardrail.py            # Llama-Prompt-Guard-2-86M perimeter screening
@@ -117,7 +115,7 @@ razorpay-hackathon-agentic-gateway/
 │   ├── orchestrator.py         # Pipeline orchestration from intent to commit
 │   ├── policy_gate.py          # Budget ceilings, velocity limits, and guardrails
 │   ├── razorpay_gateway.py     # Live Razorpay Sandbox test API adapter
-│   ├── reconcilation.py        # Out-of-band transaction reconciliation
+│   ├        
 │   ├── schemas.py              # Pydantic schemas for mandates, carts, and blocks
 │   ├── signing.py              # Asymmetric Ed25519 signature generation and verification
 │   ├── two_phase_commit.py     # Distributed 2PC state coordinator (Prepare & Commit)
@@ -131,20 +129,25 @@ razorpay-hackathon-agentic-gateway/
 │   ├── test_intent_layer.py
 │   ├── test_two_phase_commit.py
 │   └── test_webhook.py
+├── .env
 ├── app.py                      # Core API server / runner
 ├── config.py                   # Central environment and threshold configurations
 ├── demo.py                     # CLI-based transaction demonstration script
 ├── mcp_server.py               # Model Context Protocol interface
 ├── streamlit_app.py            # Interactive Streamlit operations dashboard
-├── requirements.txt
-└── .env
+└── requirements.txt
+
 
 
 ## Getting Started
 
-### 1. PrerequisitesPython
+### 1. Prerequisites
 
-3.10+Groq API KeyRazorpay Test Mode Key ID & Key Secret
+Python 3.10+
+
+Groq API Key
+
+Razorpay Test Mode Key ID & Key Secret
 
 ### 2. Installation
 
@@ -153,15 +156,21 @@ Bash
 git clone https://github.com/your-org/razorpay-hackathon-agentic-gateway.git
 
 cd razorpay-hackathon-agentic-gateway
+
 python -m venv venv
+
 source venv/bin/activate  # Windows: venv\Scripts\activate
+
 pip install -r requirements.txt
 
 ### 3. Configuration
 
 Populate your .env file with your credentials:Code snippetGROQ_API_KEY="gsk_..."
+
 RAZORPAY_KEY_ID="rzp_test_..."
+
 RAZORPAY_KEY_SECRET="..."
+
 SESSION_SPEND_CAP_PAISE=1000000
 
 ### 4. Run the Gateway Dashboard
@@ -169,4 +178,5 @@ SESSION_SPEND_CAP_PAISE=1000000
 Bashs
 
 treamlit run streamlit_app.py
+
 Open http://localhost:8502 to run purchases, evaluate mandates, inspect the cryptographic ledger, and test adversarial chaos injections.
