@@ -17,8 +17,16 @@ class IntentMandate(BaseModel):
     contents out of the mandate is what lets one mandate be checked
     against several purchase attempts within its budget and time window
     (the session-spend-cap logic depends on this separation existing).
+
+    user_id has no default, same reasoning as BuyerAgent.create_mandate's
+    own user_id parameter: binding it into the signed payload is what
+    prevents a validly-signed mandate from being replayed or
+    misattributed across accounts — User B submitting a mandate that
+    was actually signed for User A. A shared placeholder here would
+    defeat that binding entirely.
     """
     mandate_id: str
+    user_id: str
     idempotency_key: str
     max_authorized_budget_paise: int = Field(..., gt=0)
     expires_at: int  # mandate is invalid at/after this unix timestamp

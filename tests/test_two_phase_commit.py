@@ -39,6 +39,7 @@ def make_request(simulate_timeout: bool = False, simulate_decline: bool = False,
     )
     mandate = IntentMandate(
         mandate_id=mandate_id,
+        user_id="usr_test_01",
         idempotency_key=idem_key,
         max_authorized_budget_paise=10_000_00,
         expires_at=int(2e9),

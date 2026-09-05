@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from agents.buyer_agent import BuyerAgent
 from agents.guardrail import PromptGuard
 from agents.planner import Planner
+from agents.schema_utils import to_strict_schema
 from backend.exceptions import PromptInjectionDetectedError
 from backend.schemas import ExecutionRequest
 from config import settings
@@ -45,9 +46,10 @@ class IntentLayer:
 
         mandate_result = self.buyer_agent.create_mandate(
             user_prompt=user_prompt,
-            max_budget_paise=intent["max_budget_paise"],
             user_id=user_id,
+            max_budget_paise=intent["max_budget_paise"],
             quantity=intent.get("quantity", 1),
+            query=intent.get("search_query"),
         )
 
         return ExecutionRequest(
@@ -63,18 +65,6 @@ class IntentExtractionResult(BaseModel):
     selected_sku: str = Field(description="The exact SKU chosen from the candidate catalog list")
     quantity: int = Field(default=1, ge=1, description="Quantity extracted from user prompt")
     reasoning: str = Field(description="Brief explanation of why this item was selected")
-
-
-def _to_strict_schema(model: Type[BaseModel]) -> Dict[str, Any]:
-    """Groq's strict json_schema mode requires every property listed in
-    "required" (even ones with a Python-level default) and every
-    object to set "additionalProperties": false. Pydantic's default
-    model_json_schema() satisfies neither — skipping this post-
-    processing means the API call fails with a 400."""
-    schema = model.model_json_schema()
-    schema["required"] = list(schema["properties"].keys())
-    schema["additionalProperties"] = False
-    return schema
 
 
 class LLMSelectionIntentLayer:
@@ -155,7 +145,7 @@ class LLMSelectionIntentLayer:
                 "json_schema": {
                     "name": "intent_extraction",
                     "strict": True,
-                    "schema": _to_strict_schema(IntentExtractionResult),
+                    "schema": to_strict_schema(IntentExtractionResult),
                 },
             },
             messages=[

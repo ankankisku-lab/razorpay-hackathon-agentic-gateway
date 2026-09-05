@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     razorpay_webhook_secret: str = Field(..., alias="RAZORPAY_WEBHOOK_SECRET")
 
     session_spend_cap_paise: int = Field(default=250_000, alias="SESSION_SPEND_CAP_PAISE")
+    mandate_validity_seconds: int = Field(default=300, alias="MANDATE_VALIDITY_SECONDS")
 
     # Must default to False. This flag is what decides whether app.py
     # even registers the route that accepts SimulatedExecutionRequest —
@@ -66,5 +67,4 @@ class Settings(BaseSettings):
 # on missing config" a startup-time guarantee instead of a race between
 # whichever module happens to import first.
 settings = Settings()
-
 
