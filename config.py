@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(..., alias="GROQ_API_KEY")
     planner_model: str = Field(default="openai/gpt-oss-120b", alias="PLANNER_MODEL")
     guard_model: str = Field(default="meta-llama/llama-prompt-guard-2-86m", alias="GUARD_MODEL")
+    # Confirmed via live testing against the real Groq API: this model
+    # returns a raw probability-of-malicious score as a string (e.g.
+    # "0.0015..."), not a text label — unlike what the model card's
+    # description implied. Low score = safe. No officially published
+    # cutoff for this exact serving path; 0.5 is a reasonable starting
+    # default, worth tuning empirically against real traffic.
+    prompt_guard_threshold: float = Field(default=0.5, alias="PROMPT_GUARD_THRESHOLD")
 
     razorpay_key_id: str = Field(..., alias="RAZORPAY_KEY_ID")
     razorpay_key_secret: str = Field(..., alias="RAZORPAY_KEY_SECRET")
@@ -67,4 +74,3 @@ class Settings(BaseSettings):
 # on missing config" a startup-time guarantee instead of a race between
 # whichever module happens to import first.
 settings = Settings()
-
