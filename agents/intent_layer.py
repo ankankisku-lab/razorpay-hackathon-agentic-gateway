@@ -1,10 +1,11 @@
 import json
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
 from agents.buyer_agent import BuyerAgent
 from agents.guardrail import PromptGuard
+from agents.pattern_guard import CombinedGuard
 from agents.planner import Planner
 from agents.schema_utils import to_strict_schema
 from backend.exceptions import PromptInjectionDetectedError
@@ -28,7 +29,7 @@ class IntentLayer:
         planner: Optional[Planner] = None,
         buyer_agent: Optional[BuyerAgent] = None,
     ):
-        self.guardrail = guardrail if guardrail is not None else PromptGuard()
+        self.guardrail = guardrail if guardrail is not None else CombinedGuard(PromptGuard())
         self.planner = planner if planner is not None else Planner()
         self.buyer_agent = buyer_agent if buyer_agent is not None else BuyerAgent()
 
@@ -94,7 +95,7 @@ class LLMSelectionIntentLayer:
         model_name: Optional[str] = None,
     ):
         self.retriever = retriever if retriever is not None else CatalogRetriever()
-        self.guard = guard if guard is not None else PromptGuard()
+        self.guard = guard if guard is not None else CombinedGuard(PromptGuard())
         self.model_name = model_name or settings.planner_model
 
         if client is not None:

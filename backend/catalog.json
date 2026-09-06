@@ -1,37 +1,202 @@
 {
   "SKU_BOAT_100": {
+    "sku": "SKU_BOAT_100",
     "name": "boAt Bassheads 100 Wired Earphones",
     "category": "Audio",
-    "description": "Super extra bass wired in-ear earphones with in-line microphone and tangle-free PVC cable.",
     "unit_price_paise": 39900,
+    "currency": "INR",
+    "stock": 150,
+    "description": "Wired in-ear headphones with 10mm dynamic drivers, super extra bass, in-line microphone, and 1.2m tangle-free cable.",
     "integrity_hash": "063e3a6cab598d59d2d39fc49f3c9637091f93c3bd3021506c59f1b57ad6b563"
   },
   "SKU_BOAT_242": {
-    "name": "boAt Rockerz 242 Bluetooth Sports Earphones",
+    "sku": "SKU_BOAT_242",
+    "name": "boAt Rockerz 242 Bluetooth Neckband",
     "category": "Audio",
-    "description": "Sweat and water resistant wireless neckband earphones with 10mm dynamic drivers for gym workouts and running.",
     "unit_price_paise": 99900,
+    "currency": "INR",
+    "stock": 80,
+    "description": "Wireless bluetooth magnetic sports neckband earphones with IPX5 water and sweat resistance, 6-hour playback, and secure fit ear hooks for running.",
     "integrity_hash": "138f13bf262f4d23f6028cf2efcf36fceb0cc607f2bbbd4009e924577f6bb062"
   },
-  "SKU_NOISE_PULSE": {
-    "name": "Noise ColorFit Pulse Grand Smartwatch",
-    "category": "Wearables",
-    "description": "Fitness tracking smartwatch with 1.69 inch HD display, 24x7 heart rate monitor, sleep tracking, and IP68 water resistance.",
-    "unit_price_paise": 149900,
-    "integrity_hash": "8cc77caaffb933d72ce9149f6031924c46196bdb093cc91e5e187a3d3eb3fa20"
-  },
-  "SKU_SONY_WH1000": {
-    "name": "Sony WH-1000XM5 Wireless Noise Canceling Headphones",
+  "SKU_BOAT_ANC": {
+    "sku": "SKU_BOAT_ANC",
+    "name": "boAt Nirvana 751 ANC Wireless Headphones",
     "category": "Audio",
-    "description": "Flagship over-ear wireless headphones with industry-leading dual processor active noise cancellation and 30-hour battery life.",
-    "unit_price_paise": 2999000,
-    "integrity_hash": "a56762e9c559f0c7f3476f8cb875a870c8b1310abc05230092dc7d28281a5f9f"
+    "unit_price_paise": 349900,
+    "currency": "INR",
+    "stock": 40,
+    "description": "Active noise cancelling over-ear wireless headphones up to 33dB ANC, 65 hours playback, ASAP charge, and plush comfort earcups.",
+    "integrity_hash": "542ea9d4097859d7d3bff12636af88ffe161b7931d08faf3c4c444eb47f9ecbd"
   },
-  "SKU_MI_POWERBANK": {
-    "name": "Mi 3i 10000mAh Power Bank",
-    "category": "Accessories",
-    "description": "Fast charging portable power bank with dual USB output, 18W fast charging support, and 12-layer circuit protection.",
+  "SKU_SONY_C500": {
+    "sku": "SKU_SONY_C500",
+    "name": "Sony WF-C500 Truly Wireless Earbuds",
+    "category": "Audio",
+    "unit_price_paise": 599000,
+    "currency": "INR",
+    "stock": 35,
+    "description": "Compact true wireless Bluetooth earbuds with DSEE sound restoration, 20 hours battery life with charging case, and IPX4 splash resistance.",
+    "integrity_hash": "f1c604dac78df196c4de64858824907f08e35f42e5a19dcb20ce94c8eda73d7a"
+  },
+  "SKU_ONEPLUS_BULLETS": {
+    "sku": "SKU_ONEPLUS_BULLETS",
+    "name": "OnePlus Bullets Wireless Z2 Neckband",
+    "category": "Audio",
+    "unit_price_paise": 199900,
+    "currency": "INR",
+    "stock": 60,
+    "description": "Acoustic neckband earphones with 12.4mm bass drivers, fast warp charging for 20 hours in 10 minutes, and 30 hours total battery life.",
+    "integrity_hash": "c180d56f7abb7ec76a5cd2597b77fb9b1ff4c715d465113d69499c584bab4be8"
+  },
+  "SKU_JBL_C100SI": {
+    "sku": "SKU_JBL_C100SI",
+    "name": "JBL C100SI In-Ear Wired Headphones",
+    "category": "Audio",
+    "unit_price_paise": 59900,
+    "currency": "INR",
+    "stock": 120,
+    "description": "Lightweight in-ear wired earphones with signature JBL pure bass sound, one-button universal remote with microphone, and angled acoustic tubes.",
+    "integrity_hash": "c7cf39866f29ea46daa4036d192b290460663062a58520ce81666901b624528d"
+  },
+  "SKU_REALME_BUDS_T300": {
+    "sku": "SKU_REALME_BUDS_T300",
+    "name": "Realme Buds T300 TWS Earbuds",
+    "category": "Audio",
+    "unit_price_paise": 229900,
+    "currency": "INR",
+    "stock": 70,
+    "description": "True wireless earbuds featuring 30dB active noise cancellation, 360-degree spatial audio effect, and 40 hours total playback time.",
+    "integrity_hash": "94ceaa3fd7e72b4fc9dd31e346d34ee1e637dcfc1d7e68fc659cb93b252079a3"
+  },
+  "SKU_NOISE_2": {
+    "sku": "SKU_NOISE_2",
+    "name": "Noise ColorFit Pulse 2 Smartwatch",
+    "category": "Wearables",
+    "unit_price_paise": 149900,
+    "currency": "INR",
+    "stock": 50,
+    "description": "1.8 inch TFT LCD smart watch with Bluetooth calling, 550 nits peak brightness, 24/7 heart rate monitor, SpO2, and 60 sports modes.",
+    "integrity_hash": "4c0f8a34fdd5dc4123c7c931b47fab8b19de4dc3582de9b54603768cd055b03e"
+  },
+  "SKU_FIREBOLTT_NINJA": {
+    "sku": "SKU_FIREBOLTT_NINJA",
+    "name": "Fire-Boltt Ninja Call Pro Plus Smartwatch",
+    "category": "Wearables",
     "unit_price_paise": 129900,
-    "integrity_hash": "c7acc558abf821d2456d665137b3490a818dbc08254a51c8f729ab9b1fe7b322"
+    "currency": "INR",
+    "stock": 45,
+    "description": "1.83 inch HD display smartwatch featuring Bluetooth calling, AI voice assistance, over 100 workout modes, and IP67 water rating.",
+    "integrity_hash": "c50e8711be6c3afa9d82a52812fece64d6af45b5ecfb62d841796c4ad4616cca"
+  },
+  "SKU_AMAZFIT_BIP3": {
+    "sku": "SKU_AMAZFIT_BIP3",
+    "name": "Amazfit Bip 3 Pro Fitness Watch",
+    "category": "Wearables",
+    "unit_price_paise": 399900,
+    "currency": "INR",
+    "stock": 25,
+    "description": "Fitness tracking smartwatch with 1.69 inch large color display, 4 satellite positioning systems (GPS), 5 ATM water resistance, and 14-day battery.",
+    "integrity_hash": "39ec56c13568aa70498f42b6fa5935775a3c49af95f740787a794c268db7a997"
+  },
+  "SKU_BOAT_POWER": {
+    "sku": "SKU_BOAT_POWER",
+    "name": "boAt EnergyShroom PB300 10000mAh Power Bank",
+    "category": "Accessories",
+    "unit_price_paise": 119900,
+    "currency": "INR",
+    "stock": 65,
+    "description": "10000mAh lithium-polymer compact portable power bank with dual USB output, 22.5W two-way fast charge, and multi-layer IC protection.",
+    "integrity_hash": "bb6f53f3dcc5e4c3037c95cb74c6400b66a1c37eb6bd8b0ab27531c634b188bc"
+  },
+  "SKU_MI_POWER_3I": {
+    "sku": "SKU_MI_POWER_3I",
+    "name": "Mi Power Bank 3i 20000mAh",
+    "category": "Accessories",
+    "unit_price_paise": 214900,
+    "currency": "INR",
+    "stock": 40,
+    "description": "High capacity 20000mAh battery pack featuring 18W fast charging, triple USB port output, dual input via Type-C and Micro-USB, and smart power management.",
+    "integrity_hash": "03333a25eb2b819af135e03225b332730126647e039c494a6a0b41d657a733e3"
+  },
+  "SKU_AMBRANE_MAGCLICK": {
+    "sku": "SKU_AMBRANE_MAGCLICK",
+    "name": "Ambrane 10000mAh Magnetic Wireless Power Bank",
+    "category": "Accessories",
+    "unit_price_paise": 189900,
+    "currency": "INR",
+    "stock": 30,
+    "description": "MagSafe compatible wireless charging power bank for iPhone with 15W wireless output, 20W PD wired fast charging, and built-in kickstand.",
+    "integrity_hash": "d613ccc1af11e77e7d22983f0dd2da3980f3284e5fae9ae84d9e3de6d93b1053"
+  },
+  "SKU_BOAT_CABLE": {
+    "sku": "SKU_BOAT_CABLE",
+    "name": "boAt Rugged v3 Type-C Fast Charging Cable",
+    "category": "Accessories",
+    "unit_price_paise": 29900,
+    "currency": "INR",
+    "stock": 200,
+    "description": "1 meter heavy-duty nylon braided USB to Type-C fast charging cable supporting 3A rapid data sync and unbreakable connector heads.",
+    "integrity_hash": "4a76c9fe3c109812168c3442c94e74e327e940a3f5fa8ccc368adaa9e990d150"
+  },
+  "SKU_ANKER_65W_GAN": {
+    "sku": "SKU_ANKER_65W_GAN",
+    "name": "Anker Nano II 65W GaN Fast Charger",
+    "category": "Accessories",
+    "unit_price_paise": 349900,
+    "currency": "INR",
+    "stock": 35,
+    "description": "Ultra-compact Gallium Nitride (GaN) USB-C fast wall charger capable of powering high-end laptops, MacBooks, tablets, and smartphones at full 65W speed.",
+    "integrity_hash": "451c0d448ce01e16b086798116cf1acad758dd306b9d80052f9cb6356e6ede1e"
+  },
+  "SKU_PORT_LIGHTNING_CABLE": {
+    "sku": "SKU_PORT_LIGHTNING_CABLE",
+    "name": "Portronics Konnect CL Type-C to Lightning Cable",
+    "category": "Accessories",
+    "unit_price_paise": 44900,
+    "currency": "INR",
+    "stock": 110,
+    "description": "MFi certified 1.2 meter Type-C to Lightning fast charging cable supporting Power Delivery 20W for iPhone and iPad with 480Mbps data transfer.",
+    "integrity_hash": "70d6dcf3a722bb5213de5bc45497c26c7c4c07c189e87ced2e88edf9df87aee8"
+  },
+  "SKU_BOAT_65W_CHARGER": {
+    "sku": "SKU_BOAT_65W_CHARGER",
+    "name": "boAt Dual Port 65W GaN Wall Adapter",
+    "category": "Accessories",
+    "unit_price_paise": 199900,
+    "currency": "INR",
+    "stock": 55,
+    "description": "Dual-port wall adapter with 1 USB-C and 1 USB-A port, GaN technology, power distribution, and multi-layered surge protection for laptops and phones.",
+    "integrity_hash": "15e1202004cce0695ba187993062e0a396d75b4cb69c28c52d6963e3ab51ebae"
+  },
+  "SKU_LOGI_PEBBLE_MOUSE": {
+    "sku": "SKU_LOGI_PEBBLE_MOUSE",
+    "name": "Logitech Pebble M350 Silent Bluetooth Mouse",
+    "category": "Peripherals",
+    "unit_price_paise": 159500,
+    "currency": "INR",
+    "stock": 45,
+    "description": "Slim, silent wireless mouse with dual Bluetooth and 2.4GHz USB receiver connectivity, long 18-month battery life, and ultra-quiet clicking.",
+    "integrity_hash": "6a2d61ced9d07635eb654654c3352f79c53fa2b73ad33d4b532e97133ead13e2"
+  },
+  "SKU_LOGI_K380_KEYBOARD": {
+    "sku": "SKU_LOGI_K380_KEYBOARD",
+    "name": "Logitech K380 Multi-Device Bluetooth Keyboard",
+    "category": "Peripherals",
+    "unit_price_paise": 289500,
+    "currency": "INR",
+    "stock": 30,
+    "description": "Compact wireless keyboard with multi-device easy-switch pairing for up to 3 devices across Windows, Mac, iPad, and Android with rounded scissor keys.",
+    "integrity_hash": "6fd12cc28823db51cfe57e0cf373d17faaa34b8581251a9ab942022dfefd3a80"
+  },
+  "SKU_PORT_LAPTOP_STAND": {
+    "sku": "SKU_PORT_LAPTOP_STAND",
+    "name": "Portronics My Buddy K Portable Aluminum Laptop Stand",
+    "category": "Peripherals",
+    "unit_price_paise": 69900,
+    "currency": "INR",
+    "stock": 90,
+    "description": "Foldable aluminum alloy ergonomic laptop riser with adjustable height levels, anti-slip silicone pads, and heat dissipation hollow design for 11-17 inch laptops.",
+    "integrity_hash": "3a5e68e3e16f9a3f8a9c3239b2b1419bd835c138f194e478c91b41f17864e65b"
   }
 }
