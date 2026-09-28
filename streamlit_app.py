@@ -95,7 +95,10 @@ class FakeRetriever:
 
 # --- PERSISTENT STATE ---
 if "policy_gate" not in st.session_state:
-    st.session_state.policy_gate = PolicyGate(session_spend_cap_paise=10_000_00)
+    # Its own session_id: the dashboard demos a ₹10,000 cap, so it must
+    # not draw down (or be drawn down by) the API's session budget now
+    # that both live in the same durable state store.
+    st.session_state.policy_gate = PolicyGate(session_spend_cap_paise=10_000_00, session_id="streamlit-demo")
     st.session_state.coordinator = TwoPhaseCommitCoordinator(policy_gate=st.session_state.policy_gate)
     st.session_state.catalog = load_catalog()
     st.session_state.history = []
@@ -291,7 +294,7 @@ if st.session_state.get("held_transaction"):
     with col_hook1:
         if st.button("Simulate Inbound Webhook (payment.captured)", key="reconcile_cap"):
             order_id = "order_reconciled_" + held["mandate_id"][:6]
-            policy_gate.commit(held["idempotency_key"])
+            policy_gate.commit(held["idempotency_key"], order_id=order_id)
             write_ledger_entry(
                 build_entry(
                     held["mandate_id"],

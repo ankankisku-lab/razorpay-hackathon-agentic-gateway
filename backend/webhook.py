@@ -5,6 +5,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, Request
 
 from backend.ledger import build_entry, write_ledger_entry
+from backend.state_store import HELD, RESERVED
 from backend.two_phase_commit import TwoPhaseCommitCoordinator
 from config import settings
 
@@ -77,12 +78,14 @@ def create_webhook_router(coordinator: TwoPhaseCommitCoordinator) -> APIRouter:
             # than error, since there's genuinely nothing to reconcile.
             return {"status": "ok", "reconciled": False, "reason": "no idempotency_key in payload"}
 
-        reserved_amount = coordinator.policy_gate.reserved_amounts_paise.get(idem_key)
-        if reserved_amount is None:
-            # The normal case for most webhooks: the synchronous path
-            # already resolved this transaction before the webhook
-            # arrived. Nothing to do.
+        reservation = coordinator.policy_gate.get_reservation(idem_key)
+        # Only RESERVED (Phase 2 in flight) or HELD (ambiguous outcome)
+        # can have an order behind them. A COMMITTED row is the normal
+        # case for most webhooks — the synchronous path already resolved
+        # it — and an AWAITING_CONFIRMATION row never created an order.
+        if reservation is None or reservation["status"] not in (RESERVED, HELD):
             return {"status": "ok", "reconciled": False, "reason": "no held reservation for this key"}
+        reserved_amount = reservation["amount_paise"]
 
         if event_type == "payment.captured":
             if webhook_amount_paise != reserved_amount:
@@ -100,7 +103,13 @@ def create_webhook_router(coordinator: TwoPhaseCommitCoordinator) -> APIRouter:
                 ))
                 return {"status": "ok", "reconciled": False, "reason": "amount mismatch — held for manual review"}
 
-            coordinator.policy_gate.commit(idem_key)
+            # Conditional: False means someone else — the sync path, the
+            # reconciler, or an earlier delivery of this same webhook —
+            # resolved it between the lookup above and now. Razorpay
+            # delivers webhooks at-least-once, so logging the outcome
+            # regardless would record one capture twice.
+            if not coordinator.policy_gate.commit(idem_key, order_id=order_id):
+                return {"status": "ok", "reconciled": False, "reason": "already resolved"}
             write_ledger_entry(build_entry(
                 mandate_id, "WEBHOOK_RECONCILED_CAPTURED",
                 order_id=order_id, amount_paise=reserved_amount,
@@ -108,7 +117,8 @@ def create_webhook_router(coordinator: TwoPhaseCommitCoordinator) -> APIRouter:
             return {"status": "ok", "reconciled": True, "resolution": "committed"}
 
         elif event_type == "payment.failed":
-            coordinator.policy_gate.rollback(idem_key)
+            if not coordinator.policy_gate.rollback(idem_key, (RESERVED, HELD)):
+                return {"status": "ok", "reconciled": False, "reason": "already resolved"}
             write_ledger_entry(build_entry(
                 mandate_id, "WEBHOOK_RECONCILED_FAILED",
                 order_id=order_id, amount_paise=reserved_amount,

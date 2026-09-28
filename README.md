@@ -42,6 +42,7 @@ This gateway puts a hard boundary between the agent and the payment rail. The ag
 | ✍️ **Signed mandates** | Mandate **and** cart are signed together with Ed25519 over canonical JSON, so a price or cart swap after signing is detected. |
 | 🔁 **Two-phase settlement** | Phase 1 reserves budget. In Phase 2, success **commits**, a confirmed decline **rolls back**, and an ambiguous timeout is **held** for webhook reconciliation (never rolled back). |
 | 🔑 **Idempotency** | Each mandate carries a unique key, so replays are rejected and a retried Razorpay call returns the cached order instead of creating a duplicate. |
+| 💾 **Durable, shared state** | Reservations, idempotency keys, spend and the order cache live in SQLite. Each reservation is one `BEGIN IMMEDIATE` transaction, so the API, the MCP server and multiple workers share one budget, and a restart loses nothing. A background reconciler resolves held orders even if the webhook never arrives. |
 | 📜 **Tamper-evident and non-repudiable ledger** | An append-only JSONL SHA-256 hash chain for tamper-evidence, a per-block Ed25519 signature for non-repudiation, and rotation with checkpoints. |
 | 🪝 **Verified webhooks** | HMAC-SHA256 over the raw body with constant-time comparison. Amount-mismatch detection routes suspicious events to manual review. |
 | 🧰 **Four surfaces** | REST API (FastAPI), MCP server for agent tool-calling, a Streamlit ops dashboard with chaos toggles, and a scripted CLI demo. |
@@ -91,12 +92,16 @@ stateDiagram-v2
     Evaluating --> Rejected: any policy check fails (403) / tamper (409)
     Evaluating --> Reserved: GATE_APPROVED
     Reserved --> AwaitingHuman: auto_execute = false
+    AwaitingHuman --> Reserved: POST /reservations/{key}/confirm
+    AwaitingHuman --> RolledBack: /cancel, or mandate expires (reconciler)
     Reserved --> Committed: Razorpay order created
     Reserved --> RolledBack: confirmed decline (4xx) → budget + idempotency key freed
     Reserved --> Held: timeout / 5xx / unknown → budget stays reserved
     Held --> Committed: webhook payment.captured (amount matches)
     Held --> RolledBack: webhook payment.failed
     Held --> ManualReview: webhook amount mismatch
+    Held --> Committed: reconciler finds order by receipt
+    Held --> RolledBack: reconciler finds no order after grace period
     Committed --> [*]
     RolledBack --> [*]
 ```
@@ -116,7 +121,8 @@ stateDiagram-v2
 | Budget overflow / split orders | Three ₹900 orders under a ₹2,000 cap | Mandate ceiling + cumulative session cap |
 | Replay / duplicate submit | Same mandate submitted twice | Idempotency-key set |
 | Stale authorization | Mandate used after expiry | `expires_at` check |
-| Retry after timeout | Network drop, client retries | Idempotent order cache + HELD state |
+| Retry after timeout | Network drop, client retries | Durable idempotent order cache + HELD state + reconciler |
+| Crash mid-transaction | Process restarts while an order is held | Reservation state in SQLite; the reconciler resolves it on the next pass |
 | Webhook forgery | Fake `payment.captured` | HMAC-SHA256 + `compare_digest` |
 | Log tampering | Editing a past ledger entry | Hash-chain verify + signature verify |
 
@@ -129,7 +135,7 @@ Reproduce with `python -m evals.run_evals`. The corpus lives in [`evals/redteam_
 | NL prompt-injection containment | 45 (15 direct · 15 smuggling · 15 roleplay) | **45 / 45 blocked** |
 | Structural / numeric forgery | 6 | **6 / 6 rejected** at schema construction |
 | Catalog retrieval, Hit@3 | 10 queries · 20-SKU catalog | **9 / 10 (0.90)** |
-| Unit tests (`pytest`) | 60 | **60 / 60 passing**, fully offline with mocked LLM clients; includes race-condition tests that fail if the gate's lock is removed |
+| Unit tests (`pytest`) | 74 | **74 / 74 passing**, fully offline with mocked LLM clients. Includes multi-process tests (4 processes sharing one budget and one ledger) that were mutation-tested: they fail against a non-atomic reserve or an unlocked ledger |
 
 <details>
 <summary><b>Methodology notes (read before quoting these numbers)</b></summary>
@@ -184,6 +190,9 @@ python -m evals.run_evals               # red-team + retrieval benchmark (needs 
 | `MANDATE_VALIDITY_SECONDS` | | `300` | Mandate time-to-live |
 | `ALLOW_MOCK_GATEWAY` | | `false` | Enables the debug `/simulate` route and chaos flags |
 | `LEDGER_MAX_BYTES` | | `5000000` | Ledger rotation threshold |
+| `STATE_DB_PATH` | | `backend/gateway_state.db` | SQLite file for reservations, idempotency keys, spend and the order cache |
+| `RECONCILE_INTERVAL_SECONDS` | | `60` | Background reconciler period (`0` disables) |
+| `HELD_ORDER_GRACE_SECONDS` | | `900` | How long a held order with no matching Razorpay order waits before release |
 
 Missing required values raise at startup, so the app fails loudly at boot instead of mid-transaction. All money is handled as **integer paise** so floating-point rounding never touches an amount.
 
@@ -199,6 +208,8 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 | `POST` | `/api/v1/execute` | Runs the two-phase commit (`403` policy · `409` tamper · `402` declined · `504` held) |
 | `POST` | `/api/v1/webhooks/razorpay` | HMAC-verified reconciliation of held reservations |
 | `GET` | `/api/v1/ledger/verify` | Verifies the hash chain and the signatures as two separate results |
+| `POST` | `/api/v1/reservations/{idempotency_key}/confirm` | Human-in-the-loop approval of an `auto_execute=false` reservation (re-checks expiry and user) |
+| `POST` | `/api/v1/reservations/{idempotency_key}/cancel` | Releases a reservation still awaiting confirmation |
 | `POST` | `/api/v1/simulate/execute` | Chaos testing; registered only when `ALLOW_MOCK_GATEWAY=true` |
 | `GET` | `/healthz` | Liveness probe |
 
@@ -217,11 +228,13 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 ├── backend/
 │   ├── schemas.py            # IntentMandate, CartMandate, ExecutionRequest, LedgerBlock
 │   ├── policy_gate.py        # Phase 1: every deterministic check + reservation
-│   ├── two_phase_commit.py   # Phase 2: commit / rollback / hold
+│   ├── two_phase_commit.py   # Phase 2: commit / rollback / hold; confirm / cancel
+│   ├── state_store.py        # SQLite: atomic reservations, idempotency keys, spend, order cache
+│   ├── reconciler.py         # Resolves held orders by receipt; frees expired confirmations
 │   ├── razorpay_gateway.py   # Orders API adapter, idempotency cache, error classification
 │   ├── webhook.py            # HMAC-verified reconciliation router
 │   ├── signing.py            # Ed25519 keys, mandate + ledger signatures
-│   ├── ledger.py             # Hash-chained signed ledger with rotation + checkpoints
+│   ├── ledger.py             # Hash-chained signed ledger; cross-process file lock, rotation, checkpoints
 │   ├── exceptions.py         # Error taxonomy → HTTP status mapping
 │   └── catalog.json          # 20-SKU merchant catalog with integrity hashes
 ├── retrieval/
@@ -230,7 +243,7 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 ├── evals/
 │   ├── run_evals.py          # Containment, forgery, and Hit@3 benchmarks
 │   └── redteam_corpus.json   # 51 adversarial cases + 10 retrieval queries
-├── tests/                    # 60 hermetic unit tests (fake LLM clients, dummy encoder, temp ledger)
+├── tests/                    # 74 hermetic tests (fake LLM clients, dummy encoder, temp ledger and state DB)
 ├── app.py                    # FastAPI service
 ├── mcp_server.py             # MCP tool server
 ├── streamlit_app.py          # Ops dashboard with chaos toggles
@@ -242,12 +255,11 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 
 This is a hackathon-scale system. These gaps are known and intentional to call out:
 
-- [ ] **Persistence.** Idempotency keys, reservations, and session spend live in memory, so a restart between a timeout and its retry loses them. Next step: Postgres with atomic conditional updates.
-- [ ] **Multi-process safety.** `PolicyGate` serializes check-then-reserve with a lock, so it is safe under FastAPI's threadpool, but only within one process. Both the gate and the ledger need a single worker process until state moves to a database (multiple workers would split budgets and fork the hash chain).
+- [x] **Persistence and multi-process safety.** State lives in SQLite, and the ledger takes a cross-process file lock. Several workers on **one host** are safe. **Multiple hosts** need a networked database (Postgres, same atomic-update design); SQLite file locking isn't reliable over network filesystems.
+- [x] **Reconciliation worker.** Held orders resolve by receipt lookup even without a webhook; expired unconfirmed reservations are released.
 - [ ] **Authentication.** Requests are rejected if the submitter's `user_id` differs from the one inside the signed mandate, but that `user_id` is still caller-asserted; real authentication comes next.
 - [ ] **Rate limiting.** No throttling layer yet; the corpus lists it as undefended.
 - [ ] **Key management.** A single locally generated Ed25519 key signs both mandates and the ledger. Real AP2 would use separate user and merchant keys held in KMS/HSM.
-- [ ] **Reconciliation worker.** Held orders rely on webhooks, and there is no poller if a webhook never arrives.
 - [ ] **Eval v2.** Add a benign prompt set (false-positive rate), public attack corpora, indirect-injection cases, and CI regression gates.
 - [ ] **Retrieval.** Hybrid BM25 + dense search and a cross-encoder reranker for ambiguous queries.
 - [ ] **Scope.** Single-item carts; orders are created, but payment capture and refunds are out of scope.

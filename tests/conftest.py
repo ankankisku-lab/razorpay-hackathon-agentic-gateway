@@ -33,3 +33,13 @@ def _restore_mock_gateway_flag():
     original = settings.allow_mock_gateway
     yield
     settings.allow_mock_gateway = original
+
+
+@pytest.fixture(autouse=True)
+def _isolated_state_db(tmp_path, monkeypatch):
+    """A fresh reservation database per test. PolicyGate opens
+    settings.state_db_path when constructed, and that state is durable by
+    design — without this, spend and idempotency keys from one test
+    would leak into the next."""
+    monkeypatch.setattr(settings, "state_db_path", tmp_path / "state.db")
+

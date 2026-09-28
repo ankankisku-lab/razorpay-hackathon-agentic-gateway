@@ -1,14 +1,21 @@
 import hashlib
 import json
-import threading
 import time
 from pathlib import Path
-from typing import Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 
 from pydantic import ValidationError
 
 from backend.schemas import CartMandate, IntentMandate
 from backend.signing import verify_mandate_signature
+from backend.state_store import (
+    AWAITING_CONFIRMATION,
+    COMMITTED,
+    HELD,
+    OPEN_STATUSES,
+    RESERVED,
+    SQLiteStateStore,
+)
 from config import settings
 
 
@@ -24,20 +31,36 @@ class PolicyGate:
         self,
         session_spend_cap_paise: int = settings.session_spend_cap_paise,
         catalog: Optional[Dict[str, dict]] = None,
+        store: Optional[SQLiteStateStore] = None,
+        session_id: str = "default",
     ):
         self.session_spend_cap_paise = session_spend_cap_paise
-        self.session_spent_paise = 0
         # Injectable rather than a module-level global — lets a test hand
         # in a synthetic catalog with zero disk I/O, and keeps two gate
         # instances from silently sharing state through a shared global.
         self.catalog = catalog if catalog is not None else load_catalog()
-        self.processed_idempotency_keys: Set[str] = set()
-        self.reserved_amounts_paise: Dict[str, int] = {}
-        # Serializes every read-modify-write of the three fields above.
-        # Per-instance and per-process only: it makes one gate safe under
-        # FastAPI's threadpool, not several workers sharing a budget —
-        # that needs the state itself in a database with atomic updates.
-        self._lock = threading.Lock()
+        # Reservation state lives in the store, not on this object: two
+        # gates on the same database file — the API, the MCP server, a
+        # second worker, or this process after a restart — see one
+        # budget and one set of idempotency keys. The in-memory version
+        # lost held reservations on restart and forked the budget between
+        # every process that built its own gate.
+        self.store = store if store is not None else SQLiteStateStore()
+        self.session_id = session_id
+
+    # Read-only views kept under their old names so callers that inspect
+    # gate state (webhook, demo, dashboard, tests) keep working.
+    @property
+    def session_spent_paise(self) -> int:
+        return self.store.spent(self.session_id)
+
+    @property
+    def reserved_amounts_paise(self) -> Dict[str, int]:
+        return self.store.open_amounts(self.session_id)
+
+    @property
+    def processed_idempotency_keys(self) -> Set[str]:
+        return self.store.all_keys()
 
     def _verify_item_against_catalog(self, sku: str, claimed_unit_price_paise: int) -> Tuple[bool, str, int]:
         if sku not in self.catalog:
@@ -91,10 +114,10 @@ class PolicyGate:
         # through. verify_mandate_signature already returns False (not
         # a crash) for None or any malformed input, so no special case
         # is needed to make "missing" behave the same as "invalid".
-        # Placed before idempotency/expiry/catalog checks deliberately:
-        # nothing about an unverified mandate's own fields — including
-        # its idempotency_key — should be trusted enough to act on
-        # until authenticity is confirmed first.
+        # Placed before every other check deliberately: nothing about an
+        # unverified mandate's own fields — including its user_id and
+        # idempotency_key — should be trusted enough to act on until
+        # authenticity is confirmed first.
         signed_payload = {"mandate": mandate.model_dump(), "cart": cart.model_dump()}
         if not verify_mandate_signature(signed_payload, signature):
             return False, "MANDATE_SIGNATURE_TAMPER_REJECT: Mandate signature verification failed — payload altered, forged, or missing.", {}
@@ -102,9 +125,7 @@ class PolicyGate:
         # The mandate's user_id is inside the signed payload, but the
         # request's user_id is not — without this comparison a validly
         # signed mandate issued for User A could be submitted under User
-        # B's name and nothing would notice the mismatch. Checked only
-        # after the signature, for the same reason as the idempotency key
-        # below: mandate.user_id means nothing until it's authenticated.
+        # B's name and nothing would notice the mismatch.
         # KNOWN LIMITATION: requester_user_id is still caller-asserted —
         # this closes misattribution, not impersonation. That needs real
         # authentication in front of the gate.
@@ -114,65 +135,66 @@ class PolicyGate:
                 f"different user than the one submitting it."
             ), {}
 
-        idem_key = mandate.idempotency_key
+        # `<=`, not `<`: expires_at is documented as "invalid at/after
+        # this unix timestamp" — the strict comparison accepted a mandate
+        # for its entire final second.
+        if mandate.expires_at <= int(time.time()):
+            return False, f"MANDATE_EXPIRED_REJECT: IntentMandate '{mandate.mandate_id}' has expired.", {}
 
-        # Everything from the idempotency check to the reservation is one
-        # check-then-act sequence over shared state. FastAPI runs sync
-        # routes in a threadpool, so without the lock two concurrent
-        # requests can both read the same session_spent_paise, both pass
-        # the cap check, and both reserve — exceeding the cap — or both
-        # pass the idempotency check for the same key before either adds
-        # it. Schema and signature checks above stay outside the lock:
-        # they're pure functions of the request and need no serializing.
-        with self._lock:
-            if idem_key in self.processed_idempotency_keys:
-                return False, "IDEMPOTENCY_REJECT: Duplicate or replayed transaction token.", {}
+        # One bad item fails the whole cart — nothing partially executes.
+        verified_total_paise = 0
+        for item in cart.items:
+            ok, reason, actual_price = self._verify_item_against_catalog(item.sku, item.unit_price_paise)
+            if not ok:
+                return False, reason, {}
+            verified_total_paise += actual_price * item.quantity
 
-            # `<=`, not `<`: expires_at is documented as "invalid at/after
-            # this unix timestamp" — the strict comparison accepted a
-            # mandate for its entire final second.
-            if mandate.expires_at <= int(time.time()):
-                return False, f"MANDATE_EXPIRED_REJECT: IntentMandate '{mandate.mandate_id}' has expired.", {}
+        # Not an independent check: once every item passes the loop
+        # above, this is mathematically forced to hold. Kept as a canary
+        # against a future bug in that loop, not a separate defense.
+        if verified_total_paise != cart.total_amount_paise:
+            return False, (
+                f"INTEGRITY_REJECT: Cart total {cart.total_amount_paise}p does not match "
+                f"catalog-verified total {verified_total_paise}p."
+            ), {}
 
-            # One bad item fails the whole cart — nothing partially executes.
-            verified_total_paise = 0
-            for item in cart.items:
-                ok, reason, actual_price = self._verify_item_against_catalog(item.sku, item.unit_price_paise)
-                if not ok:
-                    return False, reason, {}
-                verified_total_paise += actual_price * item.quantity
+        if verified_total_paise > mandate.max_authorized_budget_paise:
+            return False, (
+                f"AP2_BUDGET_REJECT: Order total {verified_total_paise}p exceeds "
+                f"mandate ceiling of {mandate.max_authorized_budget_paise}p."
+            ), {}
 
-            # Not an independent check: once every item passes the loop
-            # above, this is mathematically forced to hold. Kept as a canary
-            # against a future bug in that loop, not a separate defense.
-            if verified_total_paise != cart.total_amount_paise:
-                return False, (
-                    f"INTEGRITY_REJECT: Cart total {cart.total_amount_paise}p does not match "
-                    f"catalog-verified total {verified_total_paise}p."
-                ), {}
-
-            if verified_total_paise > mandate.max_authorized_budget_paise:
-                return False, (
-                    f"AP2_BUDGET_REJECT: Order total {verified_total_paise}p exceeds "
-                    f"mandate ceiling of {mandate.max_authorized_budget_paise}p."
-                ), {}
-
-            # Cumulative across the whole session, not just this one order —
-            # three separate ₹900 orders under a ₹2,000 mandate each pass
-            # individually but must still be caught in aggregate.
-            projected_session_total = self.session_spent_paise + verified_total_paise
-            if projected_session_total > self.session_spend_cap_paise:
-                return False, (
-                    f"SESSION_CAP_REJECT: Cumulative session spend {projected_session_total}p "
-                    f"would exceed cap of {self.session_spend_cap_paise}p "
-                    f"(already spent {self.session_spent_paise}p)."
-                ), {}
-
-            # Phase 1 of 2PC: reserve, don't finalize. commit()/rollback()
-            # resolve this once the downstream Razorpay outcome is known.
-            self.processed_idempotency_keys.add(idem_key)
-            self.reserved_amounts_paise[idem_key] = verified_total_paise
-            self.session_spent_paise = projected_session_total
+        # Everything above is a pure function of the request and the
+        # catalog. Everything below touches shared state, so it's one
+        # atomic store call: the idempotency check, the cumulative
+        # session-cap check and the reservation happen inside a single
+        # BEGIN IMMEDIATE transaction. That serializes concurrent
+        # requests across threads AND processes — the threading.Lock it
+        # replaces only ever covered threads in one process.
+        #
+        # Session cap: cumulative across the whole session, not just this
+        # one order — three separate ₹900 orders under a ₹2,000 mandate
+        # each pass individually but must still be caught in aggregate.
+        #
+        # Phase 1 of 2PC: reserve, don't finalize. commit()/rollback()
+        # resolve this once the downstream Razorpay outcome is known.
+        outcome, spent_before = self.store.try_reserve(self.session_id, self.session_spend_cap_paise, {
+            "idempotency_key": mandate.idempotency_key,
+            "mandate_id": mandate.mandate_id,
+            "cart_id": cart.cart_id,
+            "user_id": mandate.user_id,
+            "amount_paise": verified_total_paise,
+            "currency": "INR",
+            "expires_at": mandate.expires_at,
+        })
+        if outcome == "DUPLICATE":
+            return False, "IDEMPOTENCY_REJECT: Duplicate or replayed transaction token.", {}
+        if outcome == "CAP_EXCEEDED":
+            return False, (
+                f"SESSION_CAP_REJECT: Cumulative session spend {spent_before + verified_total_paise}p "
+                f"would exceed cap of {self.session_spend_cap_paise}p "
+                f"(already spent {spent_before}p)."
+            ), {}
 
         return True, "GATE_APPROVED", {
             "cart_id": cart.cart_id,
@@ -181,13 +203,33 @@ class PolicyGate:
             "currency": "INR",
         }
 
-    def commit(self, idempotency_key: str) -> bool:
-        """Phase 2, success path — finalizes a reservation so it can
-        never be rolled back."""
-        with self._lock:
-            return self.reserved_amounts_paise.pop(idempotency_key, None) is not None
+    def get_reservation(self, idempotency_key: str) -> Optional[Dict[str, Any]]:
+        return self.store.get(idempotency_key)
 
-    def rollback(self, idempotency_key: str) -> bool:
+    def mark_awaiting_confirmation(self, idempotency_key: str) -> bool:
+        """auto_execute=False: park a fresh reservation until a human
+        confirms or cancels it (or it expires and the reconciler frees it)."""
+        return self.store.transition(idempotency_key, (RESERVED,), AWAITING_CONFIRMATION)
+
+    def claim_for_confirmation(self, idempotency_key: str) -> bool:
+        """Atomic AWAITING_CONFIRMATION -> RESERVED. Two concurrent
+        confirms of one reservation can't both proceed to Phase 2 — only
+        the call that actually moved the row gets True."""
+        return self.store.transition(idempotency_key, (AWAITING_CONFIRMATION,), RESERVED)
+
+    def mark_held(self, idempotency_key: str) -> bool:
+        """Ambiguous gateway outcome: keep the budget reserved, and make
+        the reservation visible to the reconciler."""
+        return self.store.transition(idempotency_key, (RESERVED,), HELD)
+
+    def commit(self, idempotency_key: str, order_id: Optional[str] = None) -> bool:
+        """Phase 2, success path — finalizes a reservation so it can
+        never be rolled back. True only if this call did the committing,
+        so a redelivered webhook or a second reconciler can tell it lost
+        the race and must not log the outcome twice."""
+        return self.store.transition(idempotency_key, (RESERVED, HELD), COMMITTED, order_id=order_id)
+
+    def rollback(self, idempotency_key: str, from_statuses: Tuple[str, ...] = OPEN_STATUSES) -> bool:
         """Phase 2, confirmed-failure path only — never call this for an
         ambiguous outcome (timeout, unclear response), only when
         Razorpay explicitly declined and nothing was charged.
@@ -199,10 +241,4 @@ class PolicyGate:
         an immediate retry is provably safe — burning it here would just
         force a new key on every retry without adding real protection.
         """
-        with self._lock:
-            amount_paise = self.reserved_amounts_paise.pop(idempotency_key, None)
-            if amount_paise is None:
-                return False
-            self.processed_idempotency_keys.discard(idempotency_key)
-            self.session_spent_paise = max(0, self.session_spent_paise - amount_paise)
-        return True
+        return self.store.release(idempotency_key, from_statuses) is not None

@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, status
@@ -5,34 +7,65 @@ from pydantic import BaseModel
 
 from agents.intent_layer import IntentLayer
 from backend.exceptions import (
+    GatewayBaseError,
     PolicyViolationError,
     SecurityTamperError,
     RazorpayDeclinedError,
     RazorpayAmbiguousError,
     PromptInjectionDetectedError,
+    ReservationNotFoundError,
 )
 from backend.ledger import verify_chain, verify_signatures, LEDGER_STREAM
 from backend.policy_gate import PolicyGate
+from backend.reconciler import reconcile_once
 from backend.schemas import ExecutionRequest, SimulatedExecutionRequest
 from backend.two_phase_commit import TwoPhaseCommitCoordinator
 from backend.webhook import create_webhook_router
 from config import settings
 
+# One PolicyGate, one coordinator, shared by every route that can touch a
+# reservation. The webhook's reconciliation logic (create_webhook_router)
+# takes this SAME coordinator. Reservation state itself now lives in the
+# SQLite state store, so even separately constructed gates (the MCP
+# server, a second worker) see the same reservations — but sharing one
+# instance here still avoids opening a second store for no reason.
+policy_gate = PolicyGate()
+coordinator = TwoPhaseCommitCoordinator(policy_gate=policy_gate)
+intent_layer = IntentLayer()
+
+
+async def _reconcile_forever(interval_seconds: int) -> None:
+    """Resolves HELD reservations whose webhook never arrives, and frees
+    expired unconfirmed ones. Runs in a worker thread — reconcile_once
+    makes blocking Razorpay and SQLite calls that would otherwise stall
+    the event loop. One failed pass is logged, never fatal: the next
+    pass simply tries again."""
+    while True:
+        try:
+            counts = await asyncio.to_thread(reconcile_once, coordinator)
+            if any(counts.values()):
+                print(f"[RECONCILER] {counts}")
+        except Exception as e:
+            print(f"[RECONCILER WARNING] pass failed: {e}")
+        await asyncio.sleep(interval_seconds)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    task = None
+    if settings.reconcile_interval_seconds > 0:
+        task = asyncio.create_task(_reconcile_forever(settings.reconcile_interval_seconds))
+    yield
+    if task is not None:
+        task.cancel()
+
+
 app = FastAPI(
     title="Agentic Payment Gateway",
     version="1.0.0",
     description="Deterministic, policy-gated agentic checkout with signed mandate authorization and tamper-evident ledger.",
+    lifespan=lifespan,
 )
-
-# One PolicyGate, one coordinator, shared by every route that can touch a
-# reservation. The webhook's reconciliation logic (create_webhook_router)
-# takes this SAME coordinator — if execute_payment and the webhook route
-# each held their own PolicyGate, a reservation made through one would be
-# invisible to the other, and an ambiguous-timeout hold could never be
-# resolved by an incoming payment.captured event.
-policy_gate = PolicyGate()
-coordinator = TwoPhaseCommitCoordinator(policy_gate=policy_gate)
-intent_layer = IntentLayer()
 
 app.include_router(create_webhook_router(coordinator))
 
@@ -71,28 +104,70 @@ def process_intent(body: IntentRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(err))
 
 
-@app.post("/api/v1/execute", tags=["2PC Execution"])
-def execute_payment(request: ExecutionRequest) -> Dict[str, Any]:
-    """Phase 1 policy check & reservation -> Phase 2 gateway execution."""
-    try:
-        result = coordinator.execute_transaction(request)
-        return {"status": result["status"], "result": result}
-    except SecurityTamperError as err:
+def _to_http(err: GatewayBaseError) -> HTTPException:
+    """One mapping from gateway errors to HTTP status, shared by every
+    route that can run Phase 2 — execute, confirm and cancel must never
+    disagree about what, say, an ambiguous outcome looks like to a client."""
+    if isinstance(err, ReservationNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+    if isinstance(err, SecurityTamperError):
         # Signed/catalog data was altered — a security event, not a
         # routine rejection. Distinct status from PolicyViolationError
         # on purpose: this is the case worth alerting on differently.
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Security tamper detected: {err}")
-    except PolicyViolationError as err:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Policy rejection: {err}")
-    except RazorpayDeclinedError as err:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=f"Payment declined: {err}")
-    except RazorpayAmbiguousError as err:
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Security tamper detected: {err}")
+    if isinstance(err, PolicyViolationError):
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Policy rejection: {err}")
+    if isinstance(err, RazorpayDeclinedError):
+        return HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=f"Payment declined: {err}")
+    if isinstance(err, RazorpayAmbiguousError):
         # Held, not failed — the order may exist on Razorpay's side even
         # without a clean response. 504 signals "unresolved," not "no."
-        raise HTTPException(
+        return HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail=f"Ambiguous gateway outcome, held for reconciliation: {err}",
         )
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(err))
+
+
+@app.post("/api/v1/execute", tags=["2PC Execution"])
+def execute_payment(request: ExecutionRequest) -> Dict[str, Any]:
+    """Phase 1 policy check & reservation -> Phase 2 gateway execution.
+    With auto_execute=false, stops after Phase 1: the reservation waits
+    for /reservations/{idempotency_key}/confirm or /cancel."""
+    try:
+        result = coordinator.execute_transaction(request)
+        return {"status": result["status"], "result": result}
+    except GatewayBaseError as err:
+        raise _to_http(err) from err
+
+
+class ReservationAction(BaseModel):
+    """Body for confirm/cancel. user_id must match the reservation's
+    mandate — the same binding PolicyGate enforces on /execute, and with
+    the same known limitation: it's caller-asserted until real
+    authentication exists."""
+    user_id: str
+
+
+@app.post("/api/v1/reservations/{idempotency_key}/confirm", tags=["2PC Execution"])
+def confirm_reservation(idempotency_key: str, body: ReservationAction) -> Dict[str, Any]:
+    """Human-in-the-loop approval: runs Phase 2 for a reservation made
+    with auto_execute=false. Re-checks expiry at confirmation time."""
+    try:
+        result = coordinator.confirm_reservation(idempotency_key, body.user_id)
+        return {"status": result["status"], "result": result}
+    except GatewayBaseError as err:
+        raise _to_http(err) from err
+
+
+@app.post("/api/v1/reservations/{idempotency_key}/cancel", tags=["2PC Execution"])
+def cancel_reservation(idempotency_key: str, body: ReservationAction) -> Dict[str, Any]:
+    """Releases a reservation still awaiting confirmation."""
+    try:
+        result = coordinator.cancel_reservation(idempotency_key, body.user_id)
+        return {"status": result["status"], "result": result}
+    except GatewayBaseError as err:
+        raise _to_http(err) from err
 
 
 # Registered only when explicitly enabled — this is what keeps

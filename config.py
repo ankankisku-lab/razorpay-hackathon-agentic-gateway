@@ -58,6 +58,21 @@ class Settings(BaseSettings):
     ledger_checkpoint_path: Path = BASE_DIR / "backend" / "ledger.checkpoint.json"
     ledger_archive_dir: Path = BASE_DIR / "backend" / "ledger_archive"
 
+    # Reservations, idempotency keys, session spend and the created-order
+    # cache. SQLite rather than process memory so a restart can't drop a
+    # held reservation or forget an idempotency key, and rather than
+    # Postgres so the repo stays clone-and-run. Every process that opens
+    # this file (API, MCP server, dashboard) shares one budget.
+    state_db_path: Path = BASE_DIR / "backend" / "gateway_state.db"
+
+    # Background reconciliation of HELD (ambiguous-outcome) reservations.
+    # 0 disables the loop — reconcile_once() can still be called directly.
+    reconcile_interval_seconds: int = Field(default=60, alias="RECONCILE_INTERVAL_SECONDS")
+    # How long a HELD reservation must stay unresolved, with no matching
+    # order on Razorpay, before it's released. Too short risks releasing
+    # a reservation whose order simply hasn't become visible yet.
+    held_order_grace_seconds: int = Field(default=900, alias="HELD_ORDER_GRACE_SECONDS")
+
     catalog_path: Path = BASE_DIR / "backend" / "catalog.json"
     index_path: Path = BASE_DIR / "retrieval" / "catalog.index"
     metadata_path: Path = BASE_DIR / "retrieval" / "catalog_meta.json"

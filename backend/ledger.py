@@ -7,6 +7,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+from filelock import FileLock, Timeout
 from pydantic import ValidationError
 
 from backend.schemas import LedgerBlock
@@ -19,7 +20,19 @@ from backend.signing import (
 )
 from config import settings
 
+# Two locks, because they guard different things. _LOCK serializes
+# threads in this process over the module state below. _FILE_LOCK
+# serializes PROCESSES over the ledger file itself: each process keeps
+# its own in-memory chain head, so two processes appending to one file
+# (the API and the dashboard, two uvicorn workers, a test run next to a
+# running demo) used to each extend their own view of the chain and
+# interleave their writes — which is exactly how the committed ledger
+# ended up forked at block 144. Taking _FILE_LOCK and re-syncing from
+# disk before every append makes the file, not process memory, the
+# single source of truth for where the chain currently ends.
 _LOCK = threading.Lock()
+settings.ledger_path.parent.mkdir(parents=True, exist_ok=True)
+_FILE_LOCK = FileLock(str(settings.ledger_path) + ".lock", timeout=30)
 
 _GENESIS_HASH = "0" * 64
 # No explicit genesis LedgerBlock is written — the sentinel hash above
@@ -30,6 +43,9 @@ _GENESIS_HASH = "0" * 64
 _last_hash: str = _GENESIS_HASH
 _segment_start_hash: str = _GENESIS_HASH
 _next_index: int = 0
+# How many bytes of the active ledger file this process has already
+# read. Anything past it was appended by another process since.
+_file_offset: int = 0
 
 LEDGER_STREAM: List[dict] = []
 
@@ -59,24 +75,20 @@ def _calculate_hash(prev_hash: str, block_payload: Dict[str, Any]) -> str:
     return hashlib.sha256(f"{prev_hash}:{serialized}".encode()).hexdigest()
 
 
-def _load_existing_ledger() -> None:
-    global _last_hash, _segment_start_hash, _next_index
-
+def _read_checkpoint() -> Tuple[str, int]:
     if settings.ledger_checkpoint_path.exists():
         try:
             checkpoint = json.loads(settings.ledger_checkpoint_path.read_text())
-            _segment_start_hash = checkpoint.get("last_hash", _GENESIS_HASH)
-            _last_hash = _segment_start_hash
-            _next_index = checkpoint.get("next_index", 0)
+            return checkpoint.get("last_hash", _GENESIS_HASH), checkpoint.get("next_index", 0)
         except (json.JSONDecodeError, OSError):
-            _segment_start_hash = _GENESIS_HASH
-            _last_hash = _GENESIS_HASH
-            _next_index = 0
+            pass
+    return _GENESIS_HASH, 0
 
-    if not settings.ledger_path.exists():
-        return
 
-    for line_num, line in enumerate(settings.ledger_path.read_text(encoding="utf-8").splitlines(), start=1):
+def _ingest(text: str) -> None:
+    """Appends parsed blocks to LEDGER_STREAM and advances the chain head."""
+    global _last_hash, _next_index
+    for line_num, line in enumerate(text.splitlines(), start=1):
         line = line.strip()
         if not line:
             continue
@@ -95,7 +107,46 @@ def _load_existing_ledger() -> None:
         _next_index = max(_next_index, block.get("index", -1) + 1)
 
 
-_load_existing_ledger()
+def _load_existing_ledger() -> None:
+    """Full (re)load: checkpoint first, then the whole active segment.
+    Clears LEDGER_STREAM in place rather than rebinding it — app.py,
+    mcp_server.py and the dashboard import the list object itself."""
+    global _last_hash, _segment_start_hash, _next_index, _file_offset
+    LEDGER_STREAM.clear()
+    _segment_start_hash, _next_index = _read_checkpoint()
+    _last_hash = _segment_start_hash
+    _file_offset = 0
+    if settings.ledger_path.exists():
+        data = settings.ledger_path.read_bytes()
+        _file_offset = len(data)
+        _ingest(data.decode("utf-8"))
+
+
+def _sync_from_disk_locked() -> None:
+    """Catches this process up with blocks other processes appended.
+    Caller must hold both locks. A checkpoint that moved, or a file
+    shorter than what's already been read, means another process
+    rotated the segment — only a full reload is safe then."""
+    global _file_offset
+    checkpoint_hash, _ = _read_checkpoint()
+    if checkpoint_hash != _segment_start_hash:
+        _load_existing_ledger()
+        return
+    size = settings.ledger_path.stat().st_size if settings.ledger_path.exists() else 0
+    if size < _file_offset:
+        _load_existing_ledger()
+        return
+    if size == _file_offset:
+        return
+    with open(settings.ledger_path, "rb") as f:
+        f.seek(_file_offset)
+        data = f.read()
+    _file_offset += len(data)
+    _ingest(data.decode("utf-8"))
+
+
+with _LOCK, _FILE_LOCK:
+    _load_existing_ledger()
 
 
 def build_entry(
@@ -116,7 +167,7 @@ def build_entry(
 
 
 def _rotate_locked() -> None:
-    global _last_hash, _segment_start_hash
+    global _last_hash, _segment_start_hash, _file_offset
 
     settings.ledger_archive_dir.mkdir(parents=True, exist_ok=True)
     stamp = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -153,6 +204,7 @@ def _rotate_locked() -> None:
         tmp.unlink(missing_ok=True)
 
     _segment_start_hash = _last_hash
+    _file_offset = 0
     LEDGER_STREAM.clear()
 
 
@@ -162,46 +214,69 @@ def write_ledger_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     the return value rather than thrown, so the caller decides whether
     that failure itself needs escalating.
     """
-    global _last_hash, _next_index
+    global _last_hash, _next_index, _file_offset
 
     entry = {**entry}  # copy — never mutate the caller's dict
 
-    with _LOCK:
-        entry["index"] = _next_index
-        entry["previous_hash"] = _last_hash
-        entry["block_hash"] = _calculate_hash(_last_hash, entry)
-        entry["signature"] = sign_hash(_PRIVATE_KEY, entry["block_hash"])
-        entry["signer_public_key"] = _PUBLIC_KEY_HEX
+    try:
+        with _LOCK, _FILE_LOCK:
+            _sync_from_disk_locked()
 
-        # Validates the fully-assembled block against the schema before
-        # it's treated as real — catches a malformed entry here, at
-        # write time, rather than during a later verify pass.
-        try:
-            LedgerBlock(**entry)
-        except ValidationError as e:
-            return {**entry, "_persisted": False, "_error": str(e)}
+            entry["index"] = _next_index
+            entry["previous_hash"] = _last_hash
+            entry["block_hash"] = _calculate_hash(_last_hash, entry)
+            entry["signature"] = sign_hash(_PRIVATE_KEY, entry["block_hash"])
+            entry["signer_public_key"] = _PUBLIC_KEY_HEX
 
-        LEDGER_STREAM.append(entry)
-        _last_hash = entry["block_hash"]
-        _next_index += 1
+            # Validates the fully-assembled block against the schema before
+            # it's treated as real — catches a malformed entry here, at
+            # write time, rather than during a later verify pass.
+            try:
+                LedgerBlock(**entry)
+            except ValidationError as e:
+                return {**entry, "_persisted": False, "_error": str(e)}
 
-        persisted = True
-        try:
-            settings.ledger_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(settings.ledger_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, default=str) + "\n")
-            if settings.ledger_path.stat().st_size >= settings.ledger_max_bytes:
-                _rotate_locked()
-        except OSError as e:
-            persisted = False
-            print(f"[LEDGER WARNING] Failed to persist entry to disk: {e}")
+            # Disk first, memory second. The old order (memory, then disk)
+            # meant a failed write left this process's chain head pointing
+            # at a block that was never persisted, so every later block on
+            # disk linked to a hash the file doesn't contain.
+            try:
+                with open(settings.ledger_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, default=str) + "\n")
+            except OSError as e:
+                print(f"[LEDGER WARNING] Failed to persist entry to disk: {e}")
+                return {**entry, "_persisted": False, "_error": str(e)}
+
+            LEDGER_STREAM.append(entry)
+            _last_hash = entry["block_hash"]
+            _next_index += 1
+            _file_offset = settings.ledger_path.stat().st_size
+
+            if _file_offset >= settings.ledger_max_bytes:
+                try:
+                    _rotate_locked()
+                except OSError as e:
+                    # The entry itself is safely on disk; only rotation
+                    # failed, and the next write will simply try again.
+                    print(f"[LEDGER WARNING] Rotation failed: {e}")
+    except Timeout:
+        print("[LEDGER WARNING] Timed out waiting for the ledger file lock.")
+        return {**entry, "_persisted": False, "_error": "ledger file lock timeout"}
 
     try:
         print(f"[LEDGER] {json.dumps(entry, default=str)}")
     except Exception:
         print(f"[LEDGER] {entry}")
 
-    return {**entry, "_persisted": persisted}
+    return {**entry, "_persisted": True}
+
+
+def _synced_snapshot() -> Tuple[List[dict], str]:
+    """Verification must cover what's on disk, including blocks other
+    processes wrote — not just this process's possibly-stale view."""
+    with _LOCK, _FILE_LOCK:
+        _sync_from_disk_locked()
+        return list(LEDGER_STREAM), _segment_start_hash
 
 
 def verify_chain() -> Tuple[bool, str]:
@@ -213,8 +288,11 @@ def verify_chain() -> Tuple[bool, str]:
     ALWAYS True regardless of contents, since a non-empty tuple is
     truthy. Always unpack: `is_valid, msg = verify_chain()`.
     """
-    running_hash = _segment_start_hash
-    for block in LEDGER_STREAM:
+    try:
+        blocks, running_hash = _synced_snapshot()
+    except Timeout:
+        return False, "Could not acquire the ledger file lock to verify."
+    for block in blocks:
         if block.get("previous_hash") != running_hash:
             return False, f"Broken link at index {block.get('index')}: expected {running_hash}, got {block.get('previous_hash')}"
         recomputed = _calculate_hash(running_hash, block)
@@ -232,7 +310,11 @@ def verify_signatures() -> Tuple[bool, str]:
     own hash to match), but forging a valid signature requires the
     private key. Same tuple-unpack rule as verify_chain().
     """
-    for block in LEDGER_STREAM:
+    try:
+        blocks, _ = _synced_snapshot()
+    except Timeout:
+        return False, "Could not acquire the ledger file lock to verify."
+    for block in blocks:
         block_hash = block.get("block_hash")
         signature = block.get("signature")
         signer_hex = block.get("signer_public_key")

@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import razorpay
 import requests
@@ -12,24 +12,43 @@ from config import settings
 # drift out of sync with the first.
 razorpay_client = razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
 
-# Razorpay's Orders API has no server-side idempotency (only Payouts and
-# Refunds do) — this cache is what actually prevents a retried request
-# from creating a duplicate order. KNOWN LIMITATION: in-memory only, so
-# it doesn't survive a restart. If the process dies between an ambiguous
-# timeout and its retry, this cache is empty and a retry WILL create a
-# real duplicate order. Highest-priority thing to move to Postgres
-# before this runs anywhere beyond a demo.
-IDEMPOTENCY_ORDER_STORE: Dict[str, Dict[str, Any]] = {}
+def build_receipt(mandate_id: str, idempotency_key: str) -> str:
+    """Razorpay requires receipt to be unique (max 40 chars, per their
+    Orders entity docs — NOT alphanumeric-only; their own examples
+    include '#' and '_'). Deriving it from mandate_id alone isn't
+    enough: one IntentMandate can back several separate CartMandate
+    purchases, so multiple real orders could share a mandate_id and
+    collide. idempotency_key is what's actually guaranteed unique per
+    order attempt — safer than a timestamp, which can repeat within the
+    same second for two fast back-to-back orders.
+
+    Deterministic on purpose: after an ambiguous timeout the reconciler
+    recomputes this exact receipt to ask Razorpay whether the order was
+    created, without ever having received an order_id.
+    """
+    clean_mandate = "".join(ch for ch in mandate_id if ch.isalnum())[:10]
+    clean_idem = "".join(ch for ch in idempotency_key if ch.isalnum())[:20]
+    return f"ap2_{clean_mandate}_{clean_idem}"[:40]
 
 
 def create_razorpay_order(
     validated_payload: dict,
     mandate_id: str,
     idempotency_key: str,
+    *,
+    order_cache,
     simulate_timeout: bool = False,
     simulate_decline: bool = False,
 ) -> Dict[str, Any]:
-    """simulate_timeout/simulate_decline exist to trigger the two demo
+    """order_cache (a SQLiteStateStore) is required: Razorpay's Orders
+    API has no server-side idempotency (only Payouts and Refunds do), so
+    this cache is what actually prevents a retried request from creating
+    a duplicate order. It used to be a module-level dict — lost on every
+    restart, which the old comment called the highest-priority thing to
+    move to a database. Required rather than defaulted so a caller can't
+    quietly opt out of it.
+
+    simulate_timeout/simulate_decline exist to trigger the two demo
     failure paths on command. They must only ever be reachable from a
     debug/demo code path gated by settings.allow_mock_gateway — never
     from a field a real caller (or a real AI buyer agent) can set on an
@@ -47,8 +66,9 @@ def create_razorpay_order(
 
     # Idempotency cache check first — before simulation or any network
     # call — so a cached real result is never shadowed by a simulated one.
-    if idempotency_key in IDEMPOTENCY_ORDER_STORE:
-        return {"success": True, "order": IDEMPOTENCY_ORDER_STORE[idempotency_key], "cached": True}
+    cached = order_cache.get_cached_order(idempotency_key)
+    if cached is not None:
+        return {"success": True, "order": cached, "cached": True}
 
     if simulate_timeout:
         raise RazorpayAmbiguousError("Simulated 504 Gateway Timeout / Connection Drop")
@@ -56,18 +76,7 @@ def create_razorpay_order(
         raise RazorpayDeclinedError("Simulated 400 Bad Request: Merchant account inactive or invalid currency")
 
     try:
-        # Razorpay requires receipt to be unique (max 40 chars, per their
-        # Orders entity docs — NOT alphanumeric-only; their own examples
-        # include '#' and '_'). Deriving it from mandate_id alone isn't
-        # enough: one IntentMandate can back several separate CartMandate
-        # purchases, so multiple real orders could share a mandate_id and
-        # collide. idempotency_key is what's actually guaranteed unique
-        # per order attempt — safer than a timestamp, which can repeat
-        # within the same second for two fast back-to-back orders.
-        clean_mandate = "".join(ch for ch in mandate_id if ch.isalnum())[:10]
-        clean_idem = "".join(ch for ch in idempotency_key if ch.isalnum())[:20]
-        receipt = f"ap2_{clean_mandate}_{clean_idem}"[:40]
-
+        receipt = build_receipt(mandate_id, idempotency_key)
         order_data = {
             "amount": validated_payload["verified_total_paise"],
             "currency": validated_payload.get("currency", "INR"),
@@ -80,7 +89,7 @@ def create_razorpay_order(
             },
         }
         order = razorpay_client.order.create(data=order_data)
-        IDEMPOTENCY_ORDER_STORE[idempotency_key] = order
+        order_cache.cache_order(idempotency_key, order)
         return {"success": True, "order": order, "cached": False}
 
     # Confirmed failures — Razorpay definitively rejected the request.
@@ -103,4 +112,15 @@ def create_razorpay_order(
     except Exception as e:
         raise RazorpayAmbiguousError(f"Unclassified Gateway Error: {e}")
 
-    
+
+def find_orders_by_receipt(receipt: str) -> List[Dict[str, Any]]:
+    """Asks Razorpay whether an order with this receipt exists — how the
+    reconciler resolves a HELD reservation that never got an order_id
+    back. Any failure raises RazorpayAmbiguousError: "couldn't ask" must
+    never be mistaken for "no such order", since that answer is what
+    licenses releasing the reservation."""
+    try:
+        response = razorpay_client.order.all({"receipt": receipt})
+    except Exception as e:
+        raise RazorpayAmbiguousError(f"Order lookup by receipt failed: {e}")
+    return [o for o in response.get("items", []) if o.get("receipt") == receipt]

@@ -11,8 +11,10 @@ import hashlib
 import hmac
 import json
 import os
+import tempfile
 import time
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -24,6 +26,7 @@ from agents.planner import Planner
 from backend.policy_gate import PolicyGate, load_catalog
 from backend.schemas import CartItem, CartMandate, IntentMandate, SimulatedExecutionRequest
 from backend.signing import sign_mandate
+from backend.state_store import SQLiteStateStore
 from backend.two_phase_commit import TwoPhaseCommitCoordinator
 from backend.webhook import create_webhook_router
 from backend.ledger import verify_chain, verify_signatures
@@ -120,7 +123,10 @@ def main() -> None:
     sku = "SKU_BOAT_100"
     price = CATALOG[sku]["unit_price_paise"]
 
-    policy_gate = PolicyGate(session_spend_cap_paise=10_000_00)
+    # A throwaway state database: the demo should start from an empty
+    # budget on every run, not accumulate spend in the real one.
+    demo_store = SQLiteStateStore(Path(tempfile.mkdtemp()) / "demo_state.db")
+    policy_gate = PolicyGate(session_spend_cap_paise=10_000_00, store=demo_store)
     coordinator = TwoPhaseCommitCoordinator(policy_gate=policy_gate)
 
     app = FastAPI()

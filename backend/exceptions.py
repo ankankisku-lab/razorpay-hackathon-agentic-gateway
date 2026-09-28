@@ -40,3 +40,10 @@ class PromptInjectionDetectedError(GatewayBaseError):
     must stop the pipeline outright — there's no partial/degraded way
     to proceed with a flagged prompt the way there is with, say, a
     budget rejection."""
+
+
+class ReservationNotFoundError(GatewayBaseError):
+    """Confirm/cancel referenced an idempotency key with no reservation
+    behind it — never reserved, already rolled back, or expired and
+    released by the reconciler. Distinct from a policy rejection: there
+    is nothing here to reject."""

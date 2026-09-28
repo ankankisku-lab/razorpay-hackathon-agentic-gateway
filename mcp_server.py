@@ -13,7 +13,10 @@ from backend.two_phase_commit import TwoPhaseCommitCoordinator
 # Initialize MCP application
 mcp = FastMCP("AgenticCommerceGateway")
 
-# Isolated instances for the MCP runtime
+# Separate instances, but NOT separate state: the gate reads and writes
+# the same SQLite state store as the REST API, so an agent buying through
+# MCP and a client using /execute draw from one session budget and one
+# set of idempotency keys.
 catalog = load_catalog()
 policy_gate = PolicyGate(catalog=catalog)
 coordinator = TwoPhaseCommitCoordinator(policy_gate=policy_gate)

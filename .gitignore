@@ -30,6 +30,9 @@ backend/keys/*.pem
 
 # Ledger runtime state (active log, rotation checkpoint, archived segments)
 backend/ledger.jsonl
+backend/ledger.jsonl.lock
+backend/gateway_state.db
+backend/gateway_state.db-*
 backend/ledger.checkpoint.json
 backend/ledger_archive/
 retrieval/catalog_meta.json
