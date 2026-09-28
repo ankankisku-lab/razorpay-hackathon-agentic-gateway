@@ -27,3 +27,12 @@ backend/keys/*.pem
 *.pem
 *.key
 
+
+# Ledger runtime state (active log, rotation checkpoint, archived segments)
+backend/ledger.jsonl
+backend/ledger.checkpoint.json
+backend/ledger_archive/
+retrieval/catalog_meta.json
+
+# Local interview prep notes
+interview-prep/
