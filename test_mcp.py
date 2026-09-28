@@ -43,7 +43,6 @@ async def test():
             "execute_two_phase_commit",
             {
                 "user_prompt": "Buy boAt bassheads 100 earphones under 1000 rupees",
-                "user_id": "agent_mcp_user",
                 "mandate": mandate_json["mandate"],
                 "cart": mandate_json["cart"],
                 "signature": mandate_json["signature"],

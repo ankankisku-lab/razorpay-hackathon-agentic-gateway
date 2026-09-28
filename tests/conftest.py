@@ -22,6 +22,10 @@ settings.ledger_checkpoint_path = _TEST_STATE_DIR / "ledger.checkpoint.json"
 settings.ledger_archive_dir = _TEST_STATE_DIR / "ledger_archive"
 settings.signing_private_key_path = _TEST_STATE_DIR / "keys" / "ledger_signing_key.pem"
 settings.signing_public_key_path = _TEST_STATE_DIR / "keys" / "ledger_signing_key.pub.pem"
+# app.py builds its module-level app (and so opens a state store) at
+# import; this keeps that store out of backend/. Each test then gets its
+# own database via _isolated_state_db below.
+settings.state_db_path = _TEST_STATE_DIR / "state.db"
 
 
 @pytest.fixture(autouse=True)

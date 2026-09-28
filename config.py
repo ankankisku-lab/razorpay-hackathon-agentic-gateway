@@ -73,7 +73,26 @@ class Settings(BaseSettings):
     # a reservation whose order simply hasn't become visible yet.
     held_order_grace_seconds: int = Field(default=900, alias="HELD_ORDER_GRACE_SECONDS")
 
+    # Token bucket per authenticated user, shared across processes via the
+    # state store: `rate_limit_requests` per `rate_limit_window_seconds`,
+    # which is also the burst size. 0 disables. The LLM-backed routes are
+    # where this matters most — every /intent/process call costs two
+    # model calls, and the corpus lists request floods as undefended.
+    rate_limit_requests: int = Field(default=30, alias="RATE_LIMIT_REQUESTS")
+    rate_limit_window_seconds: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
+
+    # The MCP server runs as one fixed principal rather than taking a
+    # user_id tool argument — an agent choosing its own user_id per call
+    # would be impersonation by design.
+    mcp_user_id: str = Field(default="agent_mcp_user", alias="MCP_USER_ID")
+
     catalog_path: Path = BASE_DIR / "backend" / "catalog.json"
+    # Catalog entries are signed by a merchant key (Ed25519), replacing an
+    # unkeyed sha256("sku:price") that anyone able to edit a price could
+    # simply recompute. The public key is committed; the private key is
+    # gitignored and only needed to re-sign after editing the catalog.
+    catalog_public_key_path: Path = BASE_DIR / "backend" / "catalog_signing_key.pub"
+    catalog_signing_private_key_path: Path = BASE_DIR / "backend" / "keys" / "catalog_signing_key.pem"
     index_path: Path = BASE_DIR / "retrieval" / "catalog.index"
     metadata_path: Path = BASE_DIR / "retrieval" / "catalog_meta.json"
 

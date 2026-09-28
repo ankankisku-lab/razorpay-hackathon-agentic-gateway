@@ -7,7 +7,7 @@
     "currency": "INR",
     "stock": 150,
     "description": "Wired in-ear headphones with 10mm dynamic drivers, super extra bass, in-line microphone, and 1.2m tangle-free cable.",
-    "integrity_hash": "063e3a6cab598d59d2d39fc49f3c9637091f93c3bd3021506c59f1b57ad6b563"
+    "integrity_signature": "bcf4001c8e1edc4904d6bf68d5fadd959d39d991f99cdbe0f09224456730ac41dde9cbe2a982b8ceedf5fa8f42d47282de4f7765c8a357375c0635e5521ef403"
   },
   "SKU_BOAT_242": {
     "sku": "SKU_BOAT_242",
@@ -17,7 +17,7 @@
     "currency": "INR",
     "stock": 80,
     "description": "Wireless bluetooth magnetic sports neckband earphones with IPX5 water and sweat resistance, 6-hour playback, and secure fit ear hooks for running.",
-    "integrity_hash": "138f13bf262f4d23f6028cf2efcf36fceb0cc607f2bbbd4009e924577f6bb062"
+    "integrity_signature": "5bb048268d0b7621fa81ae982f15f7cf2b872fda00d26c3244ce854e370e7f0ba29fee3822940ddb41f0abf73f1395d577f13a9410242f84803911999be7c309"
   },
   "SKU_BOAT_ANC": {
     "sku": "SKU_BOAT_ANC",
@@ -27,7 +27,7 @@
     "currency": "INR",
     "stock": 40,
     "description": "Active noise cancelling over-ear wireless headphones up to 33dB ANC, 65 hours playback, ASAP charge, and plush comfort earcups.",
-    "integrity_hash": "542ea9d4097859d7d3bff12636af88ffe161b7931d08faf3c4c444eb47f9ecbd"
+    "integrity_signature": "e1521453b9c730cdc16aa41e811827ed3074e302c625be5384be452a094aa41d67648df4bae11f0aa378b772e153ca2578ead7eeb61ee927b80b646ac6be7e01"
   },
   "SKU_SONY_C500": {
     "sku": "SKU_SONY_C500",
@@ -37,7 +37,7 @@
     "currency": "INR",
     "stock": 35,
     "description": "Compact true wireless Bluetooth earbuds with DSEE sound restoration, 20 hours battery life with charging case, and IPX4 splash resistance.",
-    "integrity_hash": "f1c604dac78df196c4de64858824907f08e35f42e5a19dcb20ce94c8eda73d7a"
+    "integrity_signature": "c305a89d36ae50bf696a2c171f8d8923868a5b5113bec31bfc047023374af55ecee2c60af85ac99031007c41339ec2a2893f7e078bff9cde4a4969991178e209"
   },
   "SKU_ONEPLUS_BULLETS": {
     "sku": "SKU_ONEPLUS_BULLETS",
@@ -47,7 +47,7 @@
     "currency": "INR",
     "stock": 60,
     "description": "Acoustic neckband earphones with 12.4mm bass drivers, fast warp charging for 20 hours in 10 minutes, and 30 hours total battery life.",
-    "integrity_hash": "c180d56f7abb7ec76a5cd2597b77fb9b1ff4c715d465113d69499c584bab4be8"
+    "integrity_signature": "54a15a2bc4ec5bf44823ebd281b3165f2ec54deac80d8bfaf3b5c802d62ff6e17f4af97740c23cacfc9bbe06cb993bd2917cd9afa44151e62a9b7bd63807400e"
   },
   "SKU_JBL_C100SI": {
     "sku": "SKU_JBL_C100SI",
@@ -57,7 +57,7 @@
     "currency": "INR",
     "stock": 120,
     "description": "Lightweight in-ear wired earphones with signature JBL pure bass sound, one-button universal remote with microphone, and angled acoustic tubes.",
-    "integrity_hash": "c7cf39866f29ea46daa4036d192b290460663062a58520ce81666901b624528d"
+    "integrity_signature": "4bcd203cad4e75733d015622e7536a1daddd9bc708d964f82b58a6f1b2d17b2db81711b46a58136de20d3d7d884acab8b3a43b8591eb712a9c288971dbe6e201"
   },
   "SKU_REALME_BUDS_T300": {
     "sku": "SKU_REALME_BUDS_T300",
@@ -67,7 +67,7 @@
     "currency": "INR",
     "stock": 70,
     "description": "True wireless earbuds featuring 30dB active noise cancellation, 360-degree spatial audio effect, and 40 hours total playback time.",
-    "integrity_hash": "94ceaa3fd7e72b4fc9dd31e346d34ee1e637dcfc1d7e68fc659cb93b252079a3"
+    "integrity_signature": "e9e992ef47a5e98e3b322e2b73743a6477cb3dcc36da803749b261ace36586bf7bafd54b5ba77076c27b81f7420feca8f6575a2e823ef4d1887d7d70182f4d0c"
   },
   "SKU_NOISE_2": {
     "sku": "SKU_NOISE_2",
@@ -77,7 +77,7 @@
     "currency": "INR",
     "stock": 50,
     "description": "1.8 inch TFT LCD smart watch with Bluetooth calling, 550 nits peak brightness, 24/7 heart rate monitor, SpO2, and 60 sports modes.",
-    "integrity_hash": "4c0f8a34fdd5dc4123c7c931b47fab8b19de4dc3582de9b54603768cd055b03e"
+    "integrity_signature": "487e78817a58cd8afcd7a8c863331964c46765f2a47ca3319ae82e5445269547761fbcf9ffe0f5b09e251af2ecfddeb87bb74cecd189aa99b75779674a2d2d02"
   },
   "SKU_FIREBOLTT_NINJA": {
     "sku": "SKU_FIREBOLTT_NINJA",
@@ -87,7 +87,7 @@
     "currency": "INR",
     "stock": 45,
     "description": "1.83 inch HD display smartwatch featuring Bluetooth calling, AI voice assistance, over 100 workout modes, and IP67 water rating.",
-    "integrity_hash": "c50e8711be6c3afa9d82a52812fece64d6af45b5ecfb62d841796c4ad4616cca"
+    "integrity_signature": "0988233bdce8e6c2502486257eecdcaa6a950057b59322b05c61bb1bc183cb4d39a7c387bea1a840eb8ad7f8227995fc0e3c9b0be68ea5b027f89f4a5dd4e605"
   },
   "SKU_AMAZFIT_BIP3": {
     "sku": "SKU_AMAZFIT_BIP3",
@@ -97,7 +97,7 @@
     "currency": "INR",
     "stock": 25,
     "description": "Fitness tracking smartwatch with 1.69 inch large color display, 4 satellite positioning systems (GPS), 5 ATM water resistance, and 14-day battery.",
-    "integrity_hash": "39ec56c13568aa70498f42b6fa5935775a3c49af95f740787a794c268db7a997"
+    "integrity_signature": "b22de01d6388428c2893dfb65a36f83f74eec35e7f92783883d0cf99d5d672a2f6b32f5f0ae283d29e5319bc72a136a997623996ef46905e599e03d146b48c08"
   },
   "SKU_BOAT_POWER": {
     "sku": "SKU_BOAT_POWER",
@@ -107,7 +107,7 @@
     "currency": "INR",
     "stock": 65,
     "description": "10000mAh lithium-polymer compact portable power bank with dual USB output, 22.5W two-way fast charge, and multi-layer IC protection.",
-    "integrity_hash": "bb6f53f3dcc5e4c3037c95cb74c6400b66a1c37eb6bd8b0ab27531c634b188bc"
+    "integrity_signature": "425a1af9000e2afadf54f52cea7d29b3221fc7a0454157796a656d7ef88f9b18b2e2aecc4bb0ffff60bd9fb989dd75812087f6b5534b121a0610356e7a1c5a0d"
   },
   "SKU_MI_POWER_3I": {
     "sku": "SKU_MI_POWER_3I",
@@ -117,7 +117,7 @@
     "currency": "INR",
     "stock": 40,
     "description": "High capacity 20000mAh battery pack featuring 18W fast charging, triple USB port output, dual input via Type-C and Micro-USB, and smart power management.",
-    "integrity_hash": "03333a25eb2b819af135e03225b332730126647e039c494a6a0b41d657a733e3"
+    "integrity_signature": "68ccab0f4891f8ae56d1c9bb32d61473c16054c5846e307468485e2ce8a30feb3a06c5158df0ff50c4b090a490de54783dbc9a8d8297900d5c2ac7f0ddd8de08"
   },
   "SKU_AMBRANE_MAGCLICK": {
     "sku": "SKU_AMBRANE_MAGCLICK",
@@ -127,7 +127,7 @@
     "currency": "INR",
     "stock": 30,
     "description": "MagSafe compatible wireless charging power bank for iPhone with 15W wireless output, 20W PD wired fast charging, and built-in kickstand.",
-    "integrity_hash": "d613ccc1af11e77e7d22983f0dd2da3980f3284e5fae9ae84d9e3de6d93b1053"
+    "integrity_signature": "021c6a1d908e18284d2ebb87a6fe1263dcca30eb0d8adec2a85545d611f0115db96602078e482fc863a3dacad62ce6425fdbb04da5daebaa6e04ed13e01abc03"
   },
   "SKU_BOAT_CABLE": {
     "sku": "SKU_BOAT_CABLE",
@@ -137,7 +137,7 @@
     "currency": "INR",
     "stock": 200,
     "description": "1 meter heavy-duty nylon braided USB to Type-C fast charging cable supporting 3A rapid data sync and unbreakable connector heads.",
-    "integrity_hash": "4a76c9fe3c109812168c3442c94e74e327e940a3f5fa8ccc368adaa9e990d150"
+    "integrity_signature": "d231c80241cc8c1b488093e45afa86f1e710402c9e4f7a04f3cbca4d083f61acfa648224c2598a63ffecc09ccfda53d30617818e1f9321cebd07950b0649f908"
   },
   "SKU_ANKER_65W_GAN": {
     "sku": "SKU_ANKER_65W_GAN",
@@ -147,7 +147,7 @@
     "currency": "INR",
     "stock": 35,
     "description": "Ultra-compact Gallium Nitride (GaN) USB-C fast wall charger capable of powering high-end laptops, MacBooks, tablets, and smartphones at full 65W speed.",
-    "integrity_hash": "451c0d448ce01e16b086798116cf1acad758dd306b9d80052f9cb6356e6ede1e"
+    "integrity_signature": "30c93832f8c44f4430966ab4c448f7bdb2c0640d8df96c90f82a92bf178d71a618736bc5f107a1c8fc1426bd16937ca874be1a22971b6fa88d6861f1575ec804"
   },
   "SKU_PORT_LIGHTNING_CABLE": {
     "sku": "SKU_PORT_LIGHTNING_CABLE",
@@ -157,7 +157,7 @@
     "currency": "INR",
     "stock": 110,
     "description": "MFi certified 1.2 meter Type-C to Lightning fast charging cable supporting Power Delivery 20W for iPhone and iPad with 480Mbps data transfer.",
-    "integrity_hash": "70d6dcf3a722bb5213de5bc45497c26c7c4c07c189e87ced2e88edf9df87aee8"
+    "integrity_signature": "4c936596526c68832fca2803fa751a54eefa324f42532f73ccc7ea7ea53ae856c63bd1967a2f4182f297ed63f3c49de1e6d2ceb1e1aa1bf40b51c784dcc1970c"
   },
   "SKU_BOAT_65W_CHARGER": {
     "sku": "SKU_BOAT_65W_CHARGER",
@@ -167,7 +167,7 @@
     "currency": "INR",
     "stock": 55,
     "description": "Dual-port wall adapter with 1 USB-C and 1 USB-A port, GaN technology, power distribution, and multi-layered surge protection for laptops and phones.",
-    "integrity_hash": "15e1202004cce0695ba187993062e0a396d75b4cb69c28c52d6963e3ab51ebae"
+    "integrity_signature": "ded506f437bf238fd991b25a6db74f4e64945787b508a833f45ef25e8fa7115831b2b63d664105b8fa98cce0126778bcb5b2ea5783bdc75feb6037a22ea7060f"
   },
   "SKU_LOGI_PEBBLE_MOUSE": {
     "sku": "SKU_LOGI_PEBBLE_MOUSE",
@@ -177,7 +177,7 @@
     "currency": "INR",
     "stock": 45,
     "description": "Slim, silent wireless mouse with dual Bluetooth and 2.4GHz USB receiver connectivity, long 18-month battery life, and ultra-quiet clicking.",
-    "integrity_hash": "6a2d61ced9d07635eb654654c3352f79c53fa2b73ad33d4b532e97133ead13e2"
+    "integrity_signature": "d965ac2f4df77e4f68f2417d4cc03164228d3b4be7849962322884dc2c02182dcc3276ced24d10f668c1e0a0dffba804e5ebecfff71769684fbd9d50b1617508"
   },
   "SKU_LOGI_K380_KEYBOARD": {
     "sku": "SKU_LOGI_K380_KEYBOARD",
@@ -187,7 +187,7 @@
     "currency": "INR",
     "stock": 30,
     "description": "Compact wireless keyboard with multi-device easy-switch pairing for up to 3 devices across Windows, Mac, iPad, and Android with rounded scissor keys.",
-    "integrity_hash": "6fd12cc28823db51cfe57e0cf373d17faaa34b8581251a9ab942022dfefd3a80"
+    "integrity_signature": "49fe7d79aeb3871cc9681b320f9a62e9551b4b7abe60e53eda336734f6200676a97d94ef59012e0ecc77721054384b9494206cb465dded7308b393ee51e8a20b"
   },
   "SKU_PORT_LAPTOP_STAND": {
     "sku": "SKU_PORT_LAPTOP_STAND",
@@ -197,6 +197,6 @@
     "currency": "INR",
     "stock": 90,
     "description": "Foldable aluminum alloy ergonomic laptop riser with adjustable height levels, anti-slip silicone pads, and heat dissipation hollow design for 11-17 inch laptops.",
-    "integrity_hash": "3a5e68e3e16f9a3f8a9c3239b2b1419bd835c138f194e478c91b41f17864e65b"
+    "integrity_signature": "b75df8a9da1feba200bdf50e1e4706a164da1d7edb68247a8dcc7c861b42401d79d929c38e899813bd86c2d4f8534ec81ad0c4da32c46cde4e91a691b1ecd70a"
   }
 }

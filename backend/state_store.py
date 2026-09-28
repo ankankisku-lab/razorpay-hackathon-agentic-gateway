@@ -41,6 +41,21 @@ CREATE TABLE IF NOT EXISTS orders (
     order_json      TEXT NOT NULL,
     created_at      REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS api_keys (
+    key_hash   TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    revoked_at REAL
+);
+CREATE TABLE IF NOT EXISTS rate_buckets (
+    bucket_key TEXT PRIMARY KEY,
+    tokens     REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS webhook_events (
+    event_id    TEXT PRIMARY KEY,
+    received_at REAL NOT NULL
+);
 """
 
 
@@ -172,14 +187,29 @@ class SQLiteStateStore:
             rows = conn.execute("SELECT * FROM reservations WHERE status = ? ORDER BY updated_at", (status,)).fetchall()
         return [dict(r) for r in rows]
 
-    def open_amounts(self, session_id: str) -> Dict[str, int]:
+    # Spend is tracked per "<scope>:<user_id>" session (see PolicyGate), so
+    # the scope-level views below match on that prefix. substr(), not
+    # LIKE: '_' and '%' are LIKE wildcards and legal in scope names.
+    _IN_SCOPE = "substr(session_id, 1, ?) = ?"
+
+    def open_amounts(self, scope: str) -> Dict[str, int]:
+        prefix = f"{scope}:"
         placeholders = ",".join("?" for _ in OPEN_STATUSES)
         with self._connection() as conn:
             rows = conn.execute(
-                f"SELECT idempotency_key, amount_paise FROM reservations WHERE session_id = ? AND status IN ({placeholders})",
-                (session_id, *OPEN_STATUSES),
+                f"SELECT idempotency_key, amount_paise FROM reservations WHERE {self._IN_SCOPE} AND status IN ({placeholders})",
+                (len(prefix), prefix, *OPEN_STATUSES),
             ).fetchall()
         return {r["idempotency_key"]: r["amount_paise"] for r in rows}
+
+    def spent_in_scope(self, scope: str) -> int:
+        prefix = f"{scope}:"
+        with self._connection() as conn:
+            row = conn.execute(
+                f"SELECT COALESCE(SUM(spent_paise), 0) AS total FROM sessions WHERE {self._IN_SCOPE}",
+                (len(prefix), prefix),
+            ).fetchone()
+        return row["total"]
 
     def all_keys(self) -> Set[str]:
         # Global, not per session: idempotency keys are the reservations
@@ -205,3 +235,73 @@ class SQLiteStateStore:
                 "INSERT OR IGNORE INTO orders (idempotency_key, order_json, created_at) VALUES (?, ?, ?)",
                 (key, json.dumps(order, default=str), time.time()),
             )
+
+    # --- API keys (see backend/auth.py) ------------------------------------
+
+    def add_api_key(self, key_hash: str, user_id: str) -> None:
+        with self._write_transaction() as conn:
+            conn.execute(
+                "INSERT INTO api_keys (key_hash, user_id, created_at) VALUES (?, ?, ?)",
+                (key_hash, user_id, time.time()),
+            )
+
+    def lookup_api_key(self, key_hash: str) -> Optional[str]:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT user_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL", (key_hash,)
+            ).fetchone()
+        return row["user_id"] if row else None
+
+    def revoke_api_key(self, key_hash: str) -> bool:
+        with self._write_transaction() as conn:
+            cur = conn.execute(
+                "UPDATE api_keys SET revoked_at = ? WHERE key_hash = ? AND revoked_at IS NULL",
+                (time.time(), key_hash),
+            )
+            return cur.rowcount == 1
+
+    # --- Rate limiting ------------------------------------------------------
+
+    def take_token(self, bucket_key: str, capacity: float, refill_per_second: float,
+                   now: Optional[float] = None) -> Tuple[bool, float]:
+        """Token bucket, refilled lazily from elapsed time. Returns
+        (allowed, seconds_until_next_token). In the database rather than
+        in memory for the same reason as reservations: a per-process
+        bucket would hand every extra worker its own full allowance."""
+        now = time.time() if now is None else now
+        with self._write_transaction() as conn:
+            row = conn.execute(
+                "SELECT tokens, updated_at FROM rate_buckets WHERE bucket_key = ?", (bucket_key,)
+            ).fetchone()
+            tokens = capacity if row is None else min(
+                capacity, row["tokens"] + (now - row["updated_at"]) * refill_per_second
+            )
+            allowed = tokens >= 1.0
+            if allowed:
+                tokens -= 1.0
+            conn.execute(
+                "INSERT OR REPLACE INTO rate_buckets (bucket_key, tokens, updated_at) VALUES (?, ?, ?)",
+                (bucket_key, tokens, now),
+            )
+        retry_after = 0.0 if allowed else (1.0 - tokens) / refill_per_second
+        return allowed, retry_after
+
+    # --- Webhook replay protection ------------------------------------------
+
+    def claim_webhook_event(self, event_id: str) -> bool:
+        """True the first time an event id is seen, False on every
+        redelivery or replay — atomically, so two concurrent deliveries
+        of one event can't both claim it."""
+        with self._write_transaction() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO webhook_events (event_id, received_at) VALUES (?, ?)",
+                (event_id, time.time()),
+            )
+            return cur.rowcount == 1
+
+    def release_webhook_event(self, event_id: str) -> None:
+        """Un-claims an event whose handling failed, so Razorpay's retry
+        is processed instead of being dropped as a duplicate."""
+        with self._write_transaction() as conn:
+            conn.execute("DELETE FROM webhook_events WHERE event_id = ?", (event_id,))
+

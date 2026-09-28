@@ -7,8 +7,9 @@ from agents.intent_layer import IntentLayer
 from agents.planner import Planner
 from backend.ledger import LEDGER_STREAM, verify_chain, verify_signatures
 from backend.policy_gate import PolicyGate, load_catalog
-from backend.schemas import CartMandate, IntentMandate, SimulatedExecutionRequest
+from backend.schemas import CartMandate, ExecutionRequest, IntentMandate
 from backend.two_phase_commit import TwoPhaseCommitCoordinator
+from config import settings
 
 # Initialize MCP application
 mcp = FastMCP("AgenticCommerceGateway")
@@ -73,17 +74,19 @@ def search_catalog(query: str, top_k: int = 3) -> str:
 
 
 @mcp.tool()
-def issue_signed_mandate(user_prompt: str, user_id: str = "agent_mcp_user") -> str:
+def issue_signed_mandate(user_prompt: str) -> str:
     """
     Screen prompt for injection, resolve cart SKUs, check budget ceilings,
     and produce an Ed25519-signed authorization mandate envelope.
 
     Args:
         user_prompt: The raw user intent (e.g. 'Buy boAt earphones under 1000').
-        user_id: The ID of the ordering user.
     """
+    # No user_id argument: this server acts as ONE principal, fixed by
+    # configuration (MCP_USER_ID). A user_id tool argument let the calling
+    # agent pick whose budget and identity to use on every call.
     try:
-        req = intent_layer.process(user_prompt=user_prompt, user_id=user_id, auto_execute=True)
+        req = intent_layer.process(user_prompt=user_prompt, user_id=settings.mcp_user_id, auto_execute=True)
         return json.dumps({
             "status": "APPROVED",
             "mandate": req.mandate.model_dump(),
@@ -97,7 +100,6 @@ def issue_signed_mandate(user_prompt: str, user_id: str = "agent_mcp_user") -> s
 @mcp.tool()
 def execute_two_phase_commit(
     user_prompt: str,
-    user_id: str,
     mandate: dict,
     cart: dict,
     signature: str,
@@ -109,7 +111,6 @@ def execute_two_phase_commit(
 
     Args:
         user_prompt: Original intent string.
-        user_id: User identifier.
         mandate: The IntentMandate dictionary object.
         cart: The CartMandate dictionary object with items and price.
         signature: The Ed25519 cryptographic signature string.
@@ -119,16 +120,18 @@ def execute_two_phase_commit(
         parsed_mandate = IntentMandate(**mandate)
         parsed_cart = CartMandate(**cart)
 
-        exec_req = SimulatedExecutionRequest(
+        # ExecutionRequest, not SimulatedExecutionRequest: there's no reason
+        # for the agent-facing path to use a debug type at all.
+        exec_req = ExecutionRequest(
             user_prompt=user_prompt,
-            user_id=user_id,
+            user_id=settings.mcp_user_id,
             mandate=parsed_mandate,
             cart=parsed_cart,
             signature=signature,
             auto_execute=auto_execute,
         )
 
-        result = coordinator.execute_transaction(exec_req)
+        result = coordinator.execute_transaction(exec_req, requester_user_id=settings.mcp_user_id)
         return json.dumps({"status": "COMMITTED", "result": result}, indent=2)
 
     except Exception as e:

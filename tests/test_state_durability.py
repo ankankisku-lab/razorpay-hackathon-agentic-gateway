@@ -182,7 +182,7 @@ def test_separate_processes_share_one_session_cap(tmp_path):
     assert len(results) == 16
     assert sum(1 for ok, _ in results if ok) == 3
     assert all("SESSION_CAP_REJECT" in reason for ok, reason in results if not ok)
-    assert SQLiteStateStore(db).spent("default") == 3 * TEST_PRICE_PAISE
+    assert SQLiteStateStore(db).spent_in_scope("default") == 3 * TEST_PRICE_PAISE
 
 
 def test_separate_processes_append_one_unbroken_ledger_chain(tmp_path):

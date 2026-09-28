@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from backend.exceptions import (
     PolicyViolationError,
@@ -26,7 +26,14 @@ class TwoPhaseCommitCoordinator:
     def __init__(self, policy_gate: PolicyGate):
         self.policy_gate = policy_gate
 
-    def execute_transaction(self, request: ExecutionRequest) -> Dict[str, Any]:
+    def execute_transaction(self, request: ExecutionRequest, requester_user_id: Optional[str] = None) -> Dict[str, Any]:
+        """requester_user_id is who is actually asking, and the mandate
+        must have been issued to them. The HTTP layer always passes the
+        API-key-authenticated user, so a caller can no longer name
+        themselves. The fallback to request.user_id exists only for
+        in-process callers that are already inside the trust boundary —
+        the demo, the dashboard, tests — which have no key to present."""
+        requester = requester_user_id if requester_user_id is not None else request.user_id
         cart_payload = request.cart.model_dump()
         intent_payload = request.mandate.model_dump()
         mandate_id = request.mandate.mandate_id
@@ -34,7 +41,7 @@ class TwoPhaseCommitCoordinator:
 
         passed, reason, data = self.policy_gate.evaluate(
             cart_payload, intent_payload, request.signature,
-            requester_user_id=request.user_id,
+            requester_user_id=requester,
         )
         if not passed:
             write_ledger_entry(build_entry(mandate_id, "POLICY_REJECTED", reason=reason))

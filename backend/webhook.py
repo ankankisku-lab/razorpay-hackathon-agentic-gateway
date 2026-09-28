@@ -49,7 +49,27 @@ def create_webhook_router(coordinator: TwoPhaseCommitCoordinator) -> APIRouter:
         if not signature or not verify_webhook_signature(raw_body, signature):
             raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
-        payload = await request.json()
+        # Replay protection. A valid signature proves Razorpay sent these
+        # bytes at SOME point, not that this delivery is new — anyone who
+        # captured one signed webhook could resend it forever. Razorpay
+        # delivers at-least-once and identifies each event with the
+        # X-Razorpay-Event-Id header; the raw-body hash is the fallback
+        # id, since a replay is by definition byte-identical. Claimed
+        # AFTER signature verification, so unauthenticated junk can't
+        # fill the table or pre-claim a real event's id.
+        event_id = request.headers.get("X-Razorpay-Event-Id") or "sha256:" + hashlib.sha256(raw_body).hexdigest()
+        store = coordinator.policy_gate.store
+        if not store.claim_webhook_event(event_id):
+            return {"status": "ok", "reconciled": False, "duplicate": True, "reason": "event already processed"}
+        try:
+            return _handle(await request.json())
+        except Exception:
+            # Handling failed: un-claim, so Razorpay's retry is processed
+            # rather than silently dropped as a "duplicate".
+            store.release_webhook_event(event_id)
+            raise
+
+    def _handle(payload: Dict[str, Any]) -> Dict[str, Any]:
         event_type = payload.get("event", "")
 
         payload_data = payload.get("payload", {})

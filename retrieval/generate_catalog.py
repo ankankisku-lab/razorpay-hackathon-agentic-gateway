@@ -5,7 +5,6 @@ embeddings using sentence-transformers (all-MiniLM-L6-v2), and builds the
 FAISS index serialized for CatalogRetriever.
 """
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, List
@@ -14,6 +13,7 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
+from backend.catalog_signing import sign_catalog_file
 from config import settings
 
 # ---------------------------------------------------------------------------
@@ -218,16 +218,6 @@ def build_embedding_text(item: Dict[str, Any]) -> str:
     return f"{item['name']}. Category: {item['category']}. {item['description']}"
 
 
-def _compute_integrity_hash(sku: str, unit_price_paise: int) -> str:
-    """Must match backend/policy_gate.py's verification formula exactly —
-    sha256(f"{sku}:{unit_price_paise}") — or every transaction fails
-    with CATALOG_TAMPER_REJECT before any other check even runs. This
-    is computed here, once, at catalog-generation time, rather than
-    duplicated logic living in two places that could drift apart.
-    """
-    return hashlib.sha256(f"{sku}:{unit_price_paise}".encode()).hexdigest()
-
-
 def build_catalog_and_index(
     model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
 ):
@@ -265,19 +255,16 @@ def build_catalog_and_index(
     # directly. A list here breaks with "list indices must be integers,
     # not str" the moment anything looks up an item — this is the exact
     # bug this project hit and fixed at the very start of the build.
-    # Each entry also gets integrity_hash added, computed with the same
-    # formula PolicyGate verifies against — without it, every single
-    # transaction is rejected with CATALOG_CONFIG_REJECT before price or
-    # budget is ever checked.
-    catalog_dict: Dict[str, Dict[str, Any]] = {}
-    for item in CATALOG_ITEMS:
-        entry = dict(item)
-        entry["integrity_hash"] = _compute_integrity_hash(item["sku"], item["unit_price_paise"])
-        catalog_dict[item["sku"]] = entry
+    # Each entry is then signed with the merchant's Ed25519 key by the
+    # same module PolicyGate verifies with — an unsigned entry is
+    # rejected with CATALOG_CONFIG_REJECT before price or budget is ever
+    # checked.
+    catalog_dict: Dict[str, Dict[str, Any]] = {item["sku"]: dict(item) for item in CATALOG_ITEMS}
 
     with open(catalog_file, "w", encoding="utf-8") as f:
         json.dump(catalog_dict, f, indent=2)
-    print(f"[+] Serialized Catalog JSON (SKU-keyed dict, with integrity_hash) -> {catalog_file}")
+    sign_catalog_file(catalog_file)
+    print(f"[+] Serialized signed Catalog JSON (SKU-keyed dict) -> {catalog_file}")
 
     print("\n[SUCCESS] 20-item grounded catalog and vector index generated successfully.")
 

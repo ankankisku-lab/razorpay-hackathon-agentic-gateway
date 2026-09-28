@@ -1,4 +1,3 @@
-import hashlib
 import json
 import time
 from pathlib import Path
@@ -6,6 +5,7 @@ from typing import Any, Dict, Optional, Set, Tuple
 
 from pydantic import ValidationError
 
+from backend.catalog_signing import load_public_key, verify_entry
 from backend.schemas import CartMandate, IntentMandate
 from backend.signing import verify_mandate_signature
 from backend.state_store import (
@@ -39,6 +39,7 @@ class PolicyGate:
         # in a synthetic catalog with zero disk I/O, and keeps two gate
         # instances from silently sharing state through a shared global.
         self.catalog = catalog if catalog is not None else load_catalog()
+        self.catalog_public_key = load_public_key()
         # Reservation state lives in the store, not on this object: two
         # gates on the same database file — the API, the MCP server, a
         # second worker, or this process after a restart — see one
@@ -46,13 +47,24 @@ class PolicyGate:
         # lost held reservations on restart and forked the budget between
         # every process that built its own gate.
         self.store = store if store is not None else SQLiteStateStore()
+        # A scope, not a single budget: spend is tracked per user within
+        # it ("<session_id>:<user_id>"), and the cap applies to each user
+        # separately. One shared budget let any one user exhaust the cap
+        # for everyone else.
         self.session_id = session_id
+
+    def _user_session(self, user_id: str) -> str:
+        return f"{self.session_id}:{user_id}"
+
+    def spent_by(self, user_id: str) -> int:
+        return self.store.spent(self._user_session(user_id))
 
     # Read-only views kept under their old names so callers that inspect
     # gate state (webhook, demo, dashboard, tests) keep working.
     @property
     def session_spent_paise(self) -> int:
-        return self.store.spent(self.session_id)
+        """Total across every user in this scope; see spent_by() for one user."""
+        return self.store.spent_in_scope(self.session_id)
 
     @property
     def reserved_amounts_paise(self) -> Dict[str, int]:
@@ -69,11 +81,12 @@ class PolicyGate:
         entry = self.catalog[sku]
         actual_price = entry["unit_price_paise"]
 
-        computed_hash = hashlib.sha256(f"{sku}:{actual_price}".encode()).hexdigest()
-        expected_hash = entry.get("integrity_hash")
-        if not expected_hash:
-            return False, f"CATALOG_CONFIG_REJECT: Missing integrity hash for '{sku}'.", 0
-        if computed_hash != expected_hash:
+        # Merchant Ed25519 signature over the whole entry. The unkeyed
+        # sha256("sku:price") it replaces could be recomputed by whoever
+        # edited the price — it caught accidents, not attacks.
+        if not entry.get("integrity_signature"):
+            return False, f"CATALOG_CONFIG_REJECT: Missing catalog signature for '{sku}'.", 0
+        if not verify_entry(sku, entry, self.catalog_public_key):
             return False, f"CATALOG_TAMPER_REJECT: Signature mismatch for '{sku}'.", 0
 
         if claimed_unit_price_paise != actual_price:
@@ -172,13 +185,13 @@ class PolicyGate:
         # requests across threads AND processes — the threading.Lock it
         # replaces only ever covered threads in one process.
         #
-        # Session cap: cumulative across the whole session, not just this
-        # one order — three separate ₹900 orders under a ₹2,000 mandate
+        # Session cap: cumulative across all of this user's orders, not just
+        # this one — three separate ₹900 orders under a ₹2,000 mandate
         # each pass individually but must still be caught in aggregate.
         #
         # Phase 1 of 2PC: reserve, don't finalize. commit()/rollback()
         # resolve this once the downstream Razorpay outcome is known.
-        outcome, spent_before = self.store.try_reserve(self.session_id, self.session_spend_cap_paise, {
+        outcome, spent_before = self.store.try_reserve(self._user_session(mandate.user_id), self.session_spend_cap_paise, {
             "idempotency_key": mandate.idempotency_key,
             "mandate_id": mandate.mandate_id,
             "cart_id": cart.cart_id,
@@ -191,9 +204,9 @@ class PolicyGate:
             return False, "IDEMPOTENCY_REJECT: Duplicate or replayed transaction token.", {}
         if outcome == "CAP_EXCEEDED":
             return False, (
-                f"SESSION_CAP_REJECT: Cumulative session spend {spent_before + verified_total_paise}p "
-                f"would exceed cap of {self.session_spend_cap_paise}p "
-                f"(already spent {spent_before}p)."
+                f"SESSION_CAP_REJECT: Cumulative spend for user '{mandate.user_id}' of "
+                f"{spent_before + verified_total_paise}p would exceed the per-user cap of "
+                f"{self.session_spend_cap_paise}p (already spent {spent_before}p)."
             ), {}
 
         return True, "GATE_APPROVED", {

@@ -26,6 +26,7 @@ def make_request(
     simulate_decline: bool = False,
     auto_execute: bool = True,
     expires_at: int = int(2e9),
+    user_id: str = "usr_test_01",
 ):
     idem_key = "idem_" + uuid.uuid4().hex[:12]
     mandate_id = "mnd_" + uuid.uuid4().hex[:8]
@@ -46,7 +47,7 @@ def make_request(
     )
     mandate = IntentMandate(
         mandate_id=mandate_id,
-        user_id="usr_test_01",
+        user_id=user_id,
         idempotency_key=idem_key,
         max_authorized_budget_paise=10_000_00,
         expires_at=expires_at,
@@ -58,7 +59,7 @@ def make_request(
     signature = sign_mandate({"mandate": mandate.model_dump(), "cart": cart.model_dump()})
     return SimulatedExecutionRequest(
         user_prompt="get me the boAt earphones",
-        user_id="usr_test_01",
+        user_id=user_id,
         cart=cart,
         mandate=mandate,
         signature=signature,
