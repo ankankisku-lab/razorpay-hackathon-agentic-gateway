@@ -39,3 +39,6 @@ retrieval/catalog_meta.json
 
 # Local interview prep notes
 interview-prep/
+
+# Eval run outputs (regenerate with python -m evals.run_evals)
+evals/results/

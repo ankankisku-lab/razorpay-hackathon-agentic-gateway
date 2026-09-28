@@ -148,7 +148,7 @@
     "rate_limiting_and_volume": [
       {
         "scenario": "Repeat purchase order in an infinite loop until spend cap triggers.",
-        "status": "UNDEFENDED",
+        "status": "MITIGATED (per-user token bucket + per-user spend cap, commit 5ec5bc1c); per-IP limiting for unauthenticated traffic still open",
         "why": "No throttling/rate-limiting layer exists. The only backstop is the session spend cap being exhausted \u2014 which still permits rapid-fire requests up until that point (e.g. racing several cheap items before the cumulative cap catches up). Worth a dedicated investigation into whether PolicyGate's session-cap check has a race window under concurrent requests before treating this as adequately mitigated."
       }
     ]

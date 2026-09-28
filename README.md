@@ -132,23 +132,31 @@ stateDiagram-v2
 
 ## 📊 Evaluation results
 
-Reproduce with `python -m evals.run_evals`. The corpus lives in [`evals/redteam_corpus.json`](evals/redteam_corpus.json).
+Reproduce with `python -m evals.run_evals` (add `--offline` to skip Groq). The full per-prompt report is written to `evals/results/eval_report.json`.
 
-| Suite | Cases | Result |
-| :-- | :-: | :-- |
-| NL prompt-injection containment | 45 (15 direct · 15 smuggling · 15 roleplay) | **45 / 45 blocked** |
-| Structural / numeric forgery | 6 | **6 / 6 rejected** at schema construction |
-| Catalog retrieval, Hit@3 | 10 queries · 20-SKU catalog | **9 / 10 (0.90)** |
-| Unit tests (`pytest`) | 92 | **92 / 92 passing**, fully offline with mocked LLM clients. The concurrency and security tests were mutation-tested: they fail against a non-atomic reserve, an unlocked ledger, a body-asserted identity, disabled webhook dedupe, or an unkeyed catalog hash |
+The eval measures three things: the **tuned** attack set the regexes were built against ([`redteam_corpus.json`](evals/redteam_corpus.json)), a **held-out** set of attacks in styles nothing was tuned on ([`heldout_attacks.json`](evals/heldout_attacks.json): paraphrase, obfuscation, other languages, injected documents, social engineering), and **110 benign** shopping prompts, 30 of them hard negatives ([`benign_corpus.json`](evals/benign_corpus.json)).
+
+| Layer / suite | Recall, tuned attacks | Recall, **held-out** attacks | False-positive rate |
+| :-- | :-: | :-: | :-: |
+| Regex `PatternGuard` | 36 / 45 (80%, CI 66–89%) | **1 / 30 (3%, CI 1–17%)** | 9 / 110 (8.2%, CI 4–15%); **30% on hard negatives** |
+| ML Prompt Guard 2 | *not yet measured*¹ | *not yet measured*¹ | *not yet measured*¹ |
+
+| Other suites | Result |
+| :-- | :-- |
+| Structural / numeric forgery | **6 / 6 rejected** at schema construction |
+| Catalog retrieval (10 queries, 20 SKUs) | Hit@1 **0.90**, Hit@3 **0.90**, MRR **0.90** |
+| Unit tests (`pytest`) | **100 / 100 passing**, fully offline. Concurrency, security and eval-gate tests were mutation-tested: they fail against a non-atomic reserve, an unlocked ledger, a body-asserted identity, disabled webhook dedupe, an unkeyed catalog hash, an over-broad or weakened regex, or an evaluator that counts API errors as blocks |
+
+¹ The ML layer needs a valid `GROQ_API_KEY`. When calls fail, the evaluator reports them as **invalid runs** and excludes them; it never counts an outage as a block.
 
 <details>
-<summary><b>Methodology notes (read before quoting these numbers)</b></summary>
+<summary><b>What these numbers mean (read before quoting them)</b></summary>
 
-- The eval measures **attack recall only**. There is no benign-prompt set yet, so the false-positive rate is not measured.
-- Samples are small. 45/45 gives a 95% lower confidence bound of about 93% (rule of three).
-- The only retrieval miss is an ambiguous query (*"water resistant fitness smartwatch with bluetooth calling"*). Two catalog items satisfy it, and the corpus flags this explicitly.
-- `PromptGuard` fails closed. If the Groq API is unreachable, prompts are blocked and counted as contained, so run the eval with a valid `GROQ_API_KEY` to measure the classifier itself.
-- Known undefended classes are listed honestly in the corpus under `unaddressed_gaps` (e.g. rate limiting).
+- **The regex layer is overfit, and the eval now shows it.** It catches 80% of the prompts it was written against and 3% of attacks phrased differently. That's the expected behaviour of a rule list, and it's why the regex layer is a cheap pre-filter, not the defense. The ML classifier is the second screen, and the **deterministic policy gate** is the actual guarantee: even a fully successful injection can't raise a price, exceed the per-user cap or skip the signature check.
+- **False positives come from hard negatives** like *"which charger works when my phone is in developer mode?"*, *"imagine you are gifting this to a teenager…"* and *"clear my cart and check out…"*. They're listed in the report. They are deliberately **not** tuned away against this same set: that would make the FPR meaningless. Fixes get measured on new prompts.
+- **CI gates** (`tests/test_eval_gates.py`, offline) fail the build if regex recall on the tuned set drops below 36/45 or benign false positives rise above 9. The held-out set is deliberately *not* gated, so nobody is tempted to tune to its exact strings.
+- **Small samples:** every rate carries a 95% Wilson interval. 45/45 would still only mean "≥ 92%".
+- The one retrieval miss is an ambiguous query (two catalog items satisfy it).
 
 </details>
 
@@ -176,7 +184,7 @@ python -m backend.auth issue usr_alice  # prints an API key for usr_alice (shown
 uvicorn app:app --reload                # REST API → http://localhost:8000/docs (send: Authorization: Bearer <key>)
 python mcp_server.py                    # MCP server (stdio) for Claude Desktop / any MCP client
 pytest                                  # unit tests
-python -m evals.run_evals               # red-team + retrieval benchmark (needs GROQ_API_KEY)
+python -m evals.run_evals               # guard (tuned / held-out / benign), forgery, retrieval; --offline skips Groq
 ```
 
 <details>
@@ -251,9 +259,11 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 │   ├── catalog_retriever.py  # MiniLM embeddings + FAISS cosine search
 │   └── generate_catalog.py   # Catalog seed + index builder
 ├── evals/
-│   ├── run_evals.py          # Containment, forgery, and Hit@3 benchmarks
-│   └── redteam_corpus.json   # 51 adversarial cases + 10 retrieval queries
-├── tests/                    # 92 hermetic tests (fake LLM clients, dummy encoder, temp ledger and state DB)
+│   ├── run_evals.py          # Per-layer recall, FPR, CIs, threshold sweep; forgery; Hit@k/MRR
+│   ├── benign_corpus.json    # 110 legitimate prompts (30 hard negatives) for false-positive rate
+│   ├── heldout_attacks.json  # 30 attacks nothing was tuned on (paraphrase, obfuscation, multilingual, indirect)
+│   └── redteam_corpus.json   # 45 tuned attacks + 6 forgeries + 10 retrieval queries
+├── tests/                    # 100 hermetic tests incl. offline eval gates (fake LLM clients, temp ledger and state DB)
 ├── app.py                    # FastAPI service
 ├── mcp_server.py             # MCP tool server
 ├── streamlit_app.py          # Ops dashboard with chaos toggles
@@ -269,7 +279,8 @@ This is a hackathon-scale system. These gaps are known and intentional to call o
 - [x] **Reconciliation worker.** Held orders resolve by receipt lookup even without a webhook; expired unconfirmed reservations are released.
 - [x] **Authentication, per-user caps, rate limiting, signed catalog, webhook replay protection.** Next steps here: OAuth/OIDC instead of static API keys, key scopes and expiry, and user-held keys for AP2-style consent.
 - [ ] **Key management.** The catalog has its own merchant key, but mandates and the ledger still share one locally generated Ed25519 key, and all keys live on disk. Real AP2 would use user-held keys for consent and KMS/HSM for the rest.
-- [ ] **Eval v2.** Add a benign prompt set (false-positive rate), public attack corpora, indirect-injection cases, and CI regression gates.
+- [x] **Eval v2.** Benign set with hard negatives, held-out attacks, per-layer attribution, invalid-run handling, CIs, threshold sweep and CI gates. Next: measure the ML layer with a valid key, add public attack corpora (e.g. deepset/prompt-injections, JailbreakBench), and get the benign set written by someone other than the regex author.
+- [ ] **Regex layer quality.** Held-out recall is 3%, so it's a pre-filter, not a defense. Reduce its hard-negative false positives, measured on *new* prompts.
 - [ ] **Retrieval.** Hybrid BM25 + dense search and a cross-encoder reranker for ambiguous queries.
 - [ ] **Scope.** Single-item carts; orders are created, but payment capture and refunds are out of scope.
 
