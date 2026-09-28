@@ -58,7 +58,7 @@ def held_reservation(monkeypatch):
     )
     mandate = IntentMandate(mandate_id=mandate_id, user_id="usr_test_01", idempotency_key=idem_key, max_authorized_budget_paise=10_000_00, expires_at=int(2e9), user_intent_summary="x")
     signature = sign_mandate({"mandate": mandate.model_dump(), "cart": cart.model_dump()})
-    req = SimulatedExecutionRequest(user_prompt="x", user_id="u1", cart=cart, mandate=mandate, signature=signature, simulate_network_timeout=True)
+    req = SimulatedExecutionRequest(user_prompt="x", user_id="usr_test_01", cart=cart, mandate=mandate, signature=signature, simulate_network_timeout=True)
 
     with pytest.raises(RazorpayAmbiguousError):
         coordinator.execute_transaction(req)

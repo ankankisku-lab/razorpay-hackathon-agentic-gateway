@@ -29,11 +29,20 @@ class PatternGuard:
         re.compile(r"<\s*/?\s*\w*(system|admin|override|bypass|injection)\w*\s*>", re.IGNORECASE),
         re.compile(r"\[\s*\w*(admin|root|system|override|bypass|debug|developer)\w*\s*\]", re.IGNORECASE),
 
-        # Expand "act as" to catch developer / tester / QA / engineer personas:
-        re.compile(r"\bact as (an?|the)?\s*[\w\s]{0,25}?(developer|tester|qa|engineer|debugger|admin|unrestricted)\b"),
+        # Expand "act as" to catch developer / tester / QA / engineer personas.
+        # IGNORECASE was missing on this and the next pattern while every
+        # other pattern had it — "Act as a Developer" and "Zero-Rupee"
+        # slipped straight through. tests/test_pattern_guard.py now pins
+        # mixed-case variants so a missing flag can't silently regress.
+        re.compile(r"\bact as (an?|the)?\s*[\w\s]{0,25}?(developer|tester|qa|engineer|debugger|admin|unrestricted)\b", re.IGNORECASE),
 
-        # Catch zero-price / zero-rupee semantic bypass attempts directly:
-        re.compile(r"\b(zero|0)[- ]*(rupee|rs|price|cost|amount)\b"),
+        # Catch zero-price / zero-rupee semantic bypass attempts directly.
+        # The lookahead exempts "zero cost EMI" / "0 cost delivery" /
+        # "zero-cost shipping" — routine Indian e-commerce questions that
+        # this pattern blocked outright (and blocked more often once the
+        # IGNORECASE fix made "Zero Cost EMI" match too). Same precision
+        # trade-off as leaving "remove" out of the limit-bypass verbs.
+        re.compile(r"\b(zero|0)[- ]*(rupee|rs|price|cost|amount)\b(?![- ]*(emi|delivery|shipping)\b)", re.IGNORECASE),
         
         # Llama chat-template control tokens — if these can be injected
         # directly into a prompt, they could confuse how the underlying
@@ -51,10 +60,12 @@ class PatternGuard:
         re.compile(r"-{3,}\s*(BEGIN|START|END)\b", re.IGNORECASE),
         # Template-injection style curly-brace smuggling.
         re.compile(r"\{\{\s*\w*(system|admin|override|bypass)\w*\s*\}\}", re.IGNORECASE),
-        # Privilege-escalation / mode-switching phrasing. \W+ instead of
-        # \s+ between words — testing showed "DEVELOPER_MODE" (an
-        # underscore, not a space) slips past a whitespace-only \s+.
-        re.compile(r"\b(developer|debug|admin|root)\W+(mode|access)\b", re.IGNORECASE),
+        # Privilege-escalation / mode-switching phrasing. [\W_]+ between
+        # words — testing showed "DEVELOPER_MODE" slips past \s+, and the
+        # earlier \W+ fix didn't actually catch it either: underscore is a
+        # WORD character, so \W never matches it. "[DEVELOPER_MODE]" was
+        # only ever caught by the bracket pattern; the bare token passed.
+        re.compile(r"\b(developer|debug|admin|root)[\W_]+(mode|access)\b", re.IGNORECASE),
         re.compile(r"\bsystem\W+override\b", re.IGNORECASE),
         re.compile(r"\bpriority[_\s]?bypass\b", re.IGNORECASE),
         # Generalized "disregard/disable X limits/guardrails/caps"

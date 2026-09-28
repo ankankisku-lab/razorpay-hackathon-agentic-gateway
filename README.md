@@ -129,7 +129,7 @@ Reproduce with `python -m evals.run_evals`. The corpus lives in [`evals/redteam_
 | NL prompt-injection containment | 45 (15 direct · 15 smuggling · 15 roleplay) | **45 / 45 blocked** |
 | Structural / numeric forgery | 6 | **6 / 6 rejected** at schema construction |
 | Catalog retrieval, Hit@3 | 10 queries · 20-SKU catalog | **9 / 10 (0.90)** |
-| Unit tests (`pytest`) | 30 | **30 / 30 passing**, fully offline with mocked LLM clients |
+| Unit tests (`pytest`) | 60 | **60 / 60 passing**, fully offline with mocked LLM clients; includes race-condition tests that fail if the gate's lock is removed |
 
 <details>
 <summary><b>Methodology notes (read before quoting these numbers)</b></summary>
@@ -230,7 +230,7 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 ├── evals/
 │   ├── run_evals.py          # Containment, forgery, and Hit@3 benchmarks
 │   └── redteam_corpus.json   # 51 adversarial cases + 10 retrieval queries
-├── tests/                    # 30 hermetic unit tests (fake LLM clients, dummy encoder)
+├── tests/                    # 60 hermetic unit tests (fake LLM clients, dummy encoder, temp ledger)
 ├── app.py                    # FastAPI service
 ├── mcp_server.py             # MCP tool server
 ├── streamlit_app.py          # Ops dashboard with chaos toggles
@@ -243,7 +243,8 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 This is a hackathon-scale system. These gaps are known and intentional to call out:
 
 - [ ] **Persistence.** Idempotency keys, reservations, and session spend live in memory, so a restart between a timeout and its retry loses them. Next step: Postgres with atomic conditional updates.
-- [ ] **Concurrency.** `PolicyGate` has no lock, so concurrent requests can race on the session cap. The ledger lock is thread-level, so it needs a single writer process (multiple workers would fork the hash chain).
+- [ ] **Multi-process safety.** `PolicyGate` serializes check-then-reserve with a lock, so it is safe under FastAPI's threadpool, but only within one process. Both the gate and the ledger need a single worker process until state moves to a database (multiple workers would split budgets and fork the hash chain).
+- [ ] **Authentication.** Requests are rejected if the submitter's `user_id` differs from the one inside the signed mandate, but that `user_id` is still caller-asserted; real authentication comes next.
 - [ ] **Rate limiting.** No throttling layer yet; the corpus lists it as undefended.
 - [ ] **Key management.** A single locally generated Ed25519 key signs both mandates and the ledger. Real AP2 would use separate user and merchant keys held in KMS/HSM.
 - [ ] **Reconciliation worker.** Held orders rely on webhooks, and there is no poller if a webhook never arrives.

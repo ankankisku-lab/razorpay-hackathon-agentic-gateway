@@ -1,4 +1,7 @@
+import threading
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -20,7 +23,12 @@ def coordinator():
     return TwoPhaseCommitCoordinator(policy_gate=PolicyGate(session_spend_cap_paise=10_000_00))
 
 
-def make_request(simulate_timeout: bool = False, simulate_decline: bool = False, auto_execute: bool = True):
+def make_request(
+    simulate_timeout: bool = False,
+    simulate_decline: bool = False,
+    auto_execute: bool = True,
+    expires_at: int = int(2e9),
+):
     idem_key = "idem_" + uuid.uuid4().hex[:12]
     mandate_id = "mnd_" + uuid.uuid4().hex[:8]
 
@@ -43,7 +51,7 @@ def make_request(simulate_timeout: bool = False, simulate_decline: bool = False,
         user_id="usr_test_01",
         idempotency_key=idem_key,
         max_authorized_budget_paise=10_000_00,
-        expires_at=int(2e9),
+        expires_at=expires_at,
         user_intent_summary="buy boAt earphones",
     )
     # evaluate() now verifies this against exactly {"mandate": ..., "cart": ...} —
@@ -52,7 +60,7 @@ def make_request(simulate_timeout: bool = False, simulate_decline: bool = False,
     signature = sign_mandate({"mandate": mandate.model_dump(), "cart": cart.model_dump()})
     return SimulatedExecutionRequest(
         user_prompt="get me the boAt earphones",
-        user_id="usr_ankan_01",
+        user_id="usr_test_01",
         cart=cart,
         mandate=mandate,
         signature=signature,
@@ -181,3 +189,94 @@ def test_2pc_auto_execute_false_reserves_without_calling_gateway(coordinator, mo
     assert called["n"] == 0, "auto_execute=False must not touch the gateway."
     # Held, not resolved either way — neither committed nor rolled back.
     assert req.mandate.idempotency_key in coordinator.policy_gate.reserved_amounts_paise
+
+def test_2pc_rejects_mandate_submitted_by_a_different_user(coordinator):
+    # The mandate's user_id is signed; the request's user_id is not. A
+    # validly signed mandate for usr_test_01 submitted as someone else
+    # must be refused, not charged to whoever happened to submit it.
+    req = make_request()
+    req.user_id = "usr_intruder"
+
+    with pytest.raises(PolicyViolationError, match="USER_BINDING_REJECT"):
+        coordinator.execute_transaction(req)
+    assert req.mandate.idempotency_key not in coordinator.policy_gate.reserved_amounts_paise
+
+
+def test_2pc_mandate_is_rejected_at_its_exact_expiry_second(coordinator):
+    # expires_at is documented as "invalid at/after" — the boundary
+    # second itself must reject (this previously passed via `<`).
+    req = make_request(expires_at=int(time.time()))
+
+    with pytest.raises(PolicyViolationError, match="MANDATE_EXPIRED_REJECT"):
+        coordinator.execute_transaction(req)
+
+
+class _SlowSpendReadGate(PolicyGate):
+    """Sleeps whenever session_spent_paise is READ, widening the exact
+    read -> check -> write window the session-cap race lives in. Without
+    this, that sequence runs without releasing the GIL and the cap test
+    passes even with the lock removed — proving nothing. (Verified: with
+    PolicyGate._lock swapped for a no-op, this test fails.)"""
+
+    @property
+    def session_spent_paise(self):
+        value = self._spent
+        time.sleep(0.005)
+        return value
+
+    @session_spent_paise.setter
+    def session_spent_paise(self, value):
+        self._spent = value
+
+
+def _widen_idempotency_race_window(gate: PolicyGate) -> None:
+    """Sleeps inside the catalog check, which sits between the
+    idempotency-key membership test and the key being recorded — the
+    window where concurrent duplicates of one request can all pass.
+    (Verified: with the lock removed, all 8 duplicates get approved.)"""
+    original = gate._verify_item_against_catalog
+
+    def slow_verify(sku, claimed_unit_price_paise):
+        time.sleep(0.005)
+        return original(sku, claimed_unit_price_paise)
+
+    gate._verify_item_against_catalog = slow_verify
+
+
+def _evaluate_concurrently(gate: PolicyGate, requests) -> list:
+    barrier = threading.Barrier(len(requests))
+
+    def submit(req):
+        barrier.wait()  # release every thread at once for maximum contention
+        ok, reason, _ = gate.evaluate(
+            req.cart.model_dump(), req.mandate.model_dump(), req.signature,
+            requester_user_id=req.user_id,
+        )
+        return ok, reason
+
+    with ThreadPoolExecutor(max_workers=len(requests)) as pool:
+        return list(pool.map(submit, requests))
+
+
+def test_concurrent_requests_cannot_exceed_session_cap():
+    gate = _SlowSpendReadGate(session_spend_cap_paise=3 * TEST_PRICE_PAISE)
+
+    results = _evaluate_concurrently(gate, [make_request() for _ in range(12)])
+
+    approved = [r for r in results if r[0]]
+    assert len(approved) == 3
+    assert all("SESSION_CAP_REJECT" in reason for ok, reason in results if not ok)
+    assert gate.session_spent_paise == 3 * TEST_PRICE_PAISE
+    assert sum(gate.reserved_amounts_paise.values()) == 3 * TEST_PRICE_PAISE
+
+
+def test_concurrent_duplicates_of_one_request_reserve_exactly_once():
+    gate = PolicyGate(session_spend_cap_paise=10_000_00)
+    _widen_idempotency_race_window(gate)
+    req = make_request()
+
+    results = _evaluate_concurrently(gate, [req] * 8)
+
+    assert sum(1 for ok, _ in results if ok) == 1
+    assert all("IDEMPOTENCY_REJECT" in reason for ok, reason in results if not ok)
+    assert gate.session_spent_paise == TEST_PRICE_PAISE

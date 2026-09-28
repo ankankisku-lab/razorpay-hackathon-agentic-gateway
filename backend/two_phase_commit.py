@@ -29,7 +29,10 @@ class TwoPhaseCommitCoordinator:
         mandate_id = request.mandate.mandate_id
         idem_key = request.mandate.idempotency_key
 
-        passed, reason, data = self.policy_gate.evaluate(cart_payload, intent_payload, request.signature)
+        passed, reason, data = self.policy_gate.evaluate(
+            cart_payload, intent_payload, request.signature,
+            requester_user_id=request.user_id,
+        )
         if not passed:
             write_ledger_entry(build_entry(mandate_id, "POLICY_REJECTED", reason=reason))
             # Tamper means signed data was altered — a security event,
