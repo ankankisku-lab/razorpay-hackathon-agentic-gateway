@@ -14,6 +14,7 @@
 ![FAISS](https://img.shields.io/badge/FAISS-vector%20search-0467DF?logo=meta&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-server-000000)
 ![Razorpay](https://img.shields.io/badge/Razorpay-sandbox-0C2451?logo=razorpay&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [Why](#-why-this-exists) · [Architecture](#-architecture) · [Defense layers](#-defense-in-depth) · [Results](#-evaluation-results) · [Quickstart](#-quickstart) · [API](#-interfaces) · [Limitations](#-known-limitations--roadmap)
 
@@ -288,6 +289,10 @@ This is a hackathon-scale system. These gaps are known and intentional to call o
 - [ ] **Regex layer quality.** Held-out recall is 3%, so it's a pre-filter, not a defense. Reduce its hard-negative false positives, measured on *new* prompts.
 - [ ] **Retrieval.** Hybrid BM25 + dense search and a cross-encoder reranker for ambiguous queries.
 - [ ] **Scope.** Single-item carts; orders are created, but payment capture and refunds are out of scope.
+
+## 📄 License
+
+Released under the [MIT License](LICENSE).
 
 ## 🙏 Acknowledgements
 
