@@ -147,7 +147,7 @@ The eval measures three things: the **tuned** attack set the regexes were built 
 | :-- | :-- |
 | Structural / numeric forgery | **6 / 6 rejected** at schema construction |
 | Catalog retrieval (10 queries, 20 SKUs) | Hit@1 **0.90**, Hit@3 **0.90**, MRR **0.90** |
-| Unit tests (`pytest`) | **100 / 100 passing**, fully offline. Concurrency, security and eval-gate tests were mutation-tested: they fail against a non-atomic reserve, an unlocked ledger, a body-asserted identity, disabled webhook dedupe, an unkeyed catalog hash, an over-broad or weakened regex, or an evaluator that counts API errors as blocks |
+| Unit tests (`pytest`) | **107 / 107 passing**, fully offline. Concurrency, security and eval-gate tests were mutation-tested: they fail against a non-atomic reserve, an unlocked ledger, a body-asserted identity, disabled webhook dedupe, an unkeyed catalog hash, an over-broad or weakened regex, or an evaluator that counts API errors as blocks |
 
 Measured 28 Sep 2026 with zero invalid runs. When ML calls fail, the evaluator reports them as **invalid runs** and excludes them; it never counts an outage as a block (the v1 eval did, which is how an expired key once produced "100% containment").
 
@@ -165,6 +165,25 @@ Measured 28 Sep 2026 with zero invalid runs. When ML calls fail, the evaluator r
 - The one retrieval miss is an ambiguous query (two catalog items satisfy it).
 
 </details>
+
+## 🖥 Interactive demo
+
+```bash
+python demo_server.py            # then open http://127.0.0.1:8000
+```
+
+A browser UI that runs every scenario against the real backend, with eleven presets covering the happy path, attacks and failures:
+- normal purchase and human approval;
+- prompt injection, an unseen attack, price tampering, replay, impersonation and overspend;
+- gateway timeout, decline and webhook replay.
+
+Each request is shown as six stages: AI screening → AI understanding → rule-based product match → signed mandate → the 9 policy checks → Razorpay settlement. A live panel shows per-user spend, reservations (with confirm/cancel and simulated webhooks) and the hash-chained audit ledger.
+
+![Tamper detected: the price was edited to ₹1 after signing, so check 2 fails and Razorpay is never called](docs/demo-tamper-detected.png)
+
+- Uses **live Groq models and the Razorpay sandbox** by default. Add `--offline-ai` and/or `--simulated-razorpay` to run without keys; the top bar labels which mode is active.
+- Demo state lives in `demo_data/`, separate from real state. The demo-only API (`backend/demo_routes.py`) is registered by the launcher only, never by the production app.
+- UI/UX guideline, its cross-check against the backend, and browser-verification findings: [`frontend/DESIGN.md`](frontend/DESIGN.md).
 
 ## 🚀 Quickstart
 
@@ -184,7 +203,8 @@ cp .env.example .env               # then fill in your keys
 Then pick a way to run it:
 
 ```bash
-python demo.py                          # 5-scene scripted demo; runs offline with fake LLM clients
+python demo_server.py                   # interactive browser demo → http://127.0.0.1:8000
+python demo.py                          # 5-scene scripted CLI demo; runs offline with fake LLM clients
 streamlit run streamlit_app.py          # ops dashboard → http://localhost:8501
 python -m backend.auth issue usr_alice  # prints an API key for usr_alice (shown once)
 uvicorn app:app --reload                # REST API → http://localhost:8000/docs (send: Authorization: Bearer <key>)
@@ -254,6 +274,7 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 │   ├── reconciler.py         # Resolves held orders by receipt; frees expired confirmations
 │   ├── razorpay_gateway.py   # Orders API adapter, idempotency cache, error classification
 │   ├── webhook.py            # HMAC-verified reconciliation router
+│   ├── demo_routes.py        # Demo-only API (session keys, pipeline trace, simulated webhooks)
 │   ├── signing.py            # Ed25519 keys, mandate + ledger signatures
 │   ├── ledger.py             # Hash-chained signed ledger; cross-process file lock, rotation, checkpoints
 │   ├── exceptions.py         # Error taxonomy → HTTP status mapping
@@ -269,7 +290,9 @@ Missing required values raise at startup, so the app fails loudly at boot instea
 │   ├── benign_corpus.json    # 110 legitimate prompts (30 hard negatives) for false-positive rate
 │   ├── heldout_attacks.json  # 30 attacks nothing was tuned on (paraphrase, obfuscation, multilingual, indirect)
 │   └── redteam_corpus.json   # 45 tuned attacks + 6 forgeries + 10 retrieval queries
-├── tests/                    # 100 hermetic tests incl. offline eval gates (fake LLM clients, temp ledger and state DB)
+├── tests/                    # 107 hermetic tests incl. offline eval gates (fake LLM clients, temp ledger and state DB)
+├── frontend/                 # Interactive demo UI (plain HTML/CSS/JS) + DESIGN.md
+├── demo_server.py            # Launches the API + demo UI (live or offline modes)
 ├── app.py                    # FastAPI service
 ├── mcp_server.py             # MCP tool server
 ├── streamlit_app.py          # Ops dashboard with chaos toggles

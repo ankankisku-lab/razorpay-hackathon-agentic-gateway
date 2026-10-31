@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentic Commerce Gateway · Demo</title>
+  <meta name="description" content="Interactive demo: AI agents propose purchases, deterministic rules approve them.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Cpath d='M9 17l5 5 9-12' stroke='white' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#pipeline">Skip to pipeline</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">✓</span>
+      <div>
+        <h1>Agentic Commerce Gateway</h1>
+        <p class="tagline"><span class="ai-text">AI proposes</span> · <span class="rule-text">rules approve</span></p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div id="modeBadges" class="badges" aria-label="Demo modes"></div>
+      <label class="user-picker">
+        <span>Acting as</span>
+        <select id="userSelect" aria-label="Acting as user" disabled></select>
+      </label>
+      <button id="resetBtn" class="btn btn-ghost" type="button" disabled>Reset demo</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- AGENT CONSOLE -->
+    <aside class="panel console" aria-labelledby="consoleTitle">
+      <h2 id="consoleTitle" class="panel-title">Agent console</h2>
+
+      <section aria-labelledby="scenarioTitle">
+        <h3 id="scenarioTitle" class="section-title">Scenarios</h3>
+        <div id="scenarioList" class="scenarios"></div>
+      </section>
+
+      <form id="promptForm" class="prompt-form">
+        <label for="prompt" class="section-title">What should the agent buy?</label>
+        <textarea id="prompt" rows="3" placeholder="e.g. Buy 2 boAt Bassheads earphones under 1000 rupees" required></textarea>
+        <label class="toggle">
+          <input type="checkbox" id="requireApproval">
+          <span>Require my approval before paying</span>
+        </label>
+        <div class="form-actions">
+          <button id="draftBtn" type="submit" class="btn btn-primary" disabled>Draft mandate</button>
+          <span class="kbd-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+        </div>
+      </form>
+    </aside>
+
+    <!-- PIPELINE -->
+    <section id="pipeline" class="panel pipeline" aria-labelledby="pipelineTitle" tabindex="-1">
+      <div class="pipeline-head">
+        <h2 id="pipelineTitle" class="panel-title">Pipeline</h2>
+        <div class="legend" aria-hidden="true">
+          <span class="legend-item ai">AI proposal</span>
+          <span class="legend-item rule">Rule decision</span>
+          <span class="legend-item pay">Razorpay</span>
+        </div>
+      </div>
+
+      <div id="hint" class="hint" hidden></div>
+
+      <div id="running" class="running" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="runningText">Working…</span>
+        <span id="runningTimer" class="mono"></span>
+      </div>
+
+      <ol id="stages" class="stages"></ol>
+
+      <div id="outcome" class="outcome" role="status" aria-live="polite" tabindex="-1" hidden></div>
+
+      <div id="emptyState" class="empty-state">
+        <p class="empty-title">Pick a scenario or type a request</p>
+        <p>The gateway will show what the AI understood, which product the rules chose, the signed mandate, every policy check, and how the payment settled.</p>
+      </div>
+    </section>
+
+    <!-- LIVE STATE -->
+    <aside class="panel state" aria-labelledby="stateTitle">
+      <h2 id="stateTitle" class="panel-title">Live state</h2>
+
+      <section class="card" aria-labelledby="spendTitle">
+        <div class="card-head">
+          <h3 id="spendTitle" class="section-title">Spending limit</h3>
+          <span id="spendNumbers" class="mono small"></span>
+        </div>
+        <div id="spendMeter" class="meter" role="img" aria-label="Spending meter"></div>
+        <div id="spendLegend" class="meter-legend"></div>
+      </section>
+
+      <section class="card" aria-labelledby="resTitle">
+        <h3 id="resTitle" class="section-title">Reservations</h3>
+        <ul id="reservations" class="reservations"></ul>
+      </section>
+
+      <section class="card" aria-labelledby="ledgerTitle">
+        <div class="card-head">
+          <h3 id="ledgerTitle" class="section-title">Audit ledger</h3>
+          <button id="verifyBtn" type="button" class="btn btn-small" disabled>Verify chain</button>
+        </div>
+        <div id="ledgerStatus" class="ledger-status"></div>
+        <ol id="ledger" class="ledger"></ol>
+        <p class="footnote">Append-only: each block stores the hash of the one before it and is signed. "Reset demo" never touches it.</p>
+      </section>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

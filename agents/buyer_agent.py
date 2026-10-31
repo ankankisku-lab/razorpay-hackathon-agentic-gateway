@@ -21,7 +21,8 @@ class BuyerAgent:
         self.retriever = retriever if retriever is not None else CatalogRetriever()
 
     def select_product(
-        self, query: str, max_budget_paise: int, quantity: int = 1, top_k: int = 3
+        self, query: str, max_budget_paise: int, quantity: int = 1, top_k: int = 3,
+        trace: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Picks the highest-scoring match whose TOTAL cost (unit price
         x quantity) fits the budget — not just unit price. See prior
@@ -30,6 +31,17 @@ class BuyerAgent:
         lower-scored alternative in the same top_k results.
         """
         matches = self.retriever.search(query, top_k=top_k)
+        if trace is not None:
+            # Recorded before any decision, so a failed selection still
+            # shows which candidates were considered and why none fit.
+            trace["candidates"] = [{
+                "sku": item.get("sku"),
+                "name": item.get("name"),
+                "unit_price_paise": item.get("unit_price_paise"),
+                "total_paise": (item.get("unit_price_paise") or 0) * quantity,
+                "score": round(float(score), 4),
+                "fits_budget": "unit_price_paise" in item and item["unit_price_paise"] * quantity <= max_budget_paise,
+            } for item, score in matches]
         if not matches:
             raise ValueError(f"No catalog matches found for query: '{query}'")
 
@@ -58,6 +70,7 @@ class BuyerAgent:
         quantity: int = 1,
         query: Optional[str] = None,
         validity_seconds: Optional[int] = None,
+        trace: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Builds and signs an IntentMandate and CartMandate.
 
@@ -78,7 +91,7 @@ class BuyerAgent:
 
         search_term = query or user_prompt
         selection = self.select_product(
-            search_term, max_budget_paise=max_budget_paise, quantity=quantity
+            search_term, max_budget_paise=max_budget_paise, quantity=quantity, trace=trace
         )
         item = selection["item"]
         sku = item["sku"]

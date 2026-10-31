@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
@@ -33,25 +34,56 @@ class IntentLayer:
         self.planner = planner if planner is not None else Planner()
         self.buyer_agent = buyer_agent if buyer_agent is not None else BuyerAgent()
 
-    def process(self, user_prompt: str, user_id: str, auto_execute: bool = True) -> ExecutionRequest:
+    def process(
+        self,
+        user_prompt: str,
+        user_id: str,
+        auto_execute: bool = True,
+        trace: Optional[Dict[str, Any]] = None,
+    ) -> ExecutionRequest:
+        """trace, if given, is filled in stage by stage, and stays filled
+        if a stage raises, so the caller can show exactly where a request
+        stopped. Only the demo passes one; see CombinedGuard.screen_detailed
+        for why production doesn't expose it."""
         # Guardrail runs before the planner ever sees the prompt — the
         # whole point of screening first is that a flagged prompt never
         # reaches the model that would otherwise act on it.
-        is_safe, classification = self.guardrail.screen(user_prompt)
+        start = time.perf_counter()
+        if trace is not None and isinstance(self.guardrail, CombinedGuard):
+            screening = self.guardrail.screen_detailed(user_prompt)
+            is_safe, classification = screening["safe"], screening["detail"]
+            trace["screening"] = screening
+        else:
+            is_safe, classification = self.guardrail.screen(user_prompt)
+            if trace is not None:
+                trace["screening"] = {"safe": is_safe, "detail": classification, "regex": None, "ml": None}
+        if trace is not None:
+            trace["screening"]["ms"] = (time.perf_counter() - start) * 1000
         if not is_safe:
             raise PromptInjectionDetectedError(
                 f"Guardrail flagged prompt as unsafe: {classification}"
             )
 
+        start = time.perf_counter()
         intent = self.planner.draft_intent(user_prompt)
+        if trace is not None:
+            trace["understanding"] = {**intent, "ms": (time.perf_counter() - start) * 1000}
 
-        mandate_result = self.buyer_agent.create_mandate(
+        mandate_kwargs: Dict[str, Any] = dict(
             user_prompt=user_prompt,
             user_id=user_id,
             max_budget_paise=intent["max_budget_paise"],
             quantity=intent.get("quantity", 1),
             query=intent.get("search_query"),
         )
+        start = time.perf_counter()
+        if trace is not None:
+            trace["match"] = {"rule": "first match, by similarity, whose price x quantity fits the budget"}
+            mandate_kwargs["trace"] = trace["match"]
+        mandate_result = self.buyer_agent.create_mandate(**mandate_kwargs)
+        if trace is not None:
+            trace["match"]["chosen_sku"] = mandate_result["cart"].items[0].sku
+            trace["match"]["ms"] = (time.perf_counter() - start) * 1000
 
         return ExecutionRequest(
             user_prompt=user_prompt,

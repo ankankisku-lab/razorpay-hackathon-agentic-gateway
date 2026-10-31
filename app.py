@@ -1,5 +1,6 @@
 import asyncio
 import math
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional
 
@@ -23,6 +24,8 @@ from backend.schemas import ExecutionRequest, SimulatedExecutionRequest
 from backend.two_phase_commit import TwoPhaseCommitCoordinator
 from backend.webhook import create_webhook_router
 from config import settings
+
+FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 
 
 class IntentRequest(BaseModel):
@@ -67,9 +70,15 @@ def _to_http(err: GatewayBaseError) -> HTTPException:
 def create_app(
     coordinator: Optional[TwoPhaseCommitCoordinator] = None,
     intent_layer_factory: Optional[Callable[[], Any]] = None,
+    demo: bool = False,
+    demo_modes: Optional[Dict[str, str]] = None,
 ) -> FastAPI:
     """A factory rather than module-level singletons, so a test can build
     an app over a fresh state store and a fake intent layer.
+
+    demo=True adds the interactive demo (frontend/ at /demo/) and its
+    demo-only API (backend/demo_routes.py). Only demo_server.py passes it;
+    the module-level production app below never does.
 
     One PolicyGate, one coordinator, shared by every route that can touch
     a reservation — the webhook router takes this SAME coordinator.
@@ -223,11 +232,15 @@ def create_app(
             """Debug-only route for triggering the demo failure paths on
             command. Exists at all only because settings.allow_mock_gateway
             is explicitly true."""
+            # Same error→status mapping as /execute. This route used to
+            # answer 400 for everything, so a client couldn't tell a held
+            # timeout (504) from a confirmed decline (402) — the one
+            # distinction the settlement design exists to preserve.
             try:
                 result = coordinator.execute_transaction(request, requester_user_id=user_id)
-                return {"status": "SIMULATED", "result": result}
-            except (SecurityTamperError, PolicyViolationError, RazorpayDeclinedError, RazorpayAmbiguousError) as err:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
+                return {"status": result["status"], "simulated": True, "result": result}
+            except GatewayBaseError as err:
+                raise _to_http(err) from err
 
     @app.get("/api/v1/ledger/verify", tags=["Audit"])
     def verify_audit_ledger(user_id: str = Depends(authenticated_user)) -> Dict[str, Any]:
@@ -251,6 +264,21 @@ def create_app(
             "signature_error": sig_err,
             "active_segment_block_count": len(LEDGER_STREAM),
         }
+
+    if demo:
+        from fastapi.responses import RedirectResponse
+        from fastapi.staticfiles import StaticFiles
+
+        from backend.demo_routes import create_demo_router
+
+        app.include_router(create_demo_router(
+            coordinator, intent_layer, authenticated_user, rate_limited_user, demo_modes or {},
+        ))
+        app.mount("/demo", StaticFiles(directory=FRONTEND_DIR, html=True), name="demo")
+
+        @app.get("/", include_in_schema=False)
+        def demo_home() -> RedirectResponse:
+            return RedirectResponse("/demo/")
 
     return app
 

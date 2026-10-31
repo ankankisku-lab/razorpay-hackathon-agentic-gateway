@@ -1,5 +1,6 @@
 import re
-from typing import List, Pattern, Tuple
+import time
+from typing import Any, Dict, List, Pattern, Tuple
 
 
 class PatternGuard:
@@ -126,7 +127,21 @@ class CombinedGuard:
         self.pattern_guard = pattern_guard or PatternGuard()
 
     def screen(self, user_prompt: str) -> Tuple[bool, str]:
+        result = self.screen_detailed(user_prompt)
+        return result["safe"], result["detail"]
+
+    def screen_detailed(self, user_prompt: str) -> Dict[str, Any]:
+        """Same verdict as screen(), plus what each layer said and how
+        long it took, for the demo's pipeline trace. Production never
+        returns this to a client: per-layer scores would let an attacker
+        tune a prompt until it slips under the threshold."""
+        start = time.perf_counter()
         pattern_safe, pattern_detail = self.pattern_guard.screen(user_prompt)
+        regex = {"safe": pattern_safe, "detail": pattern_detail, "ms": (time.perf_counter() - start) * 1000}
         if not pattern_safe:
-            return False, f"pattern_guard: {pattern_detail}"
-        return self.ml_guard.screen(user_prompt)
+            return {"safe": False, "detail": f"pattern_guard: {pattern_detail}", "regex": regex, "ml": None}
+
+        start = time.perf_counter()
+        ml_safe, ml_detail = self.ml_guard.screen(user_prompt)
+        ml = {"safe": ml_safe, "detail": ml_detail, "ms": (time.perf_counter() - start) * 1000}
+        return {"safe": ml_safe, "detail": ml_detail, "regex": regex, "ml": ml}

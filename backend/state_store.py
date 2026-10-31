@@ -236,6 +236,32 @@ class SQLiteStateStore:
                 (key, json.dumps(order, default=str), time.time()),
             )
 
+    # --- Demo views (used only by backend/demo_routes.py) --------------------
+
+    def list_for_user(self, user_id: str, limit: int = 8) -> List[Dict[str, Any]]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM reservations WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def amounts_by_status(self, session_id: str) -> Dict[str, int]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT status, SUM(amount_paise) AS total FROM reservations WHERE session_id = ? GROUP BY status",
+                (session_id,),
+            ).fetchall()
+        return {r["status"]: r["total"] for r in rows}
+
+    def reset_runtime_state(self) -> None:
+        """Demo reset: reservations, spend, cached orders, rate buckets and
+        webhook history. API keys survive (the open demo session keeps
+        working), and the audit ledger isn't in this database at all."""
+        with self._write_transaction() as conn:
+            for table in ("reservations", "sessions", "orders", "rate_buckets", "webhook_events"):
+                conn.execute(f"DELETE FROM {table}")
+
     # --- API keys (see backend/auth.py) ------------------------------------
 
     def add_api_key(self, key_hash: str, user_id: str) -> None:
